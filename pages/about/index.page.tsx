@@ -6,7 +6,7 @@ export { Page };
 function Page() {
   return (
     <>
-      <h1>About</h1>
+      <div className={"bg-white to-indigo-400"}>About</h1>
       <p>A colored page.</p>
     </>
   );
