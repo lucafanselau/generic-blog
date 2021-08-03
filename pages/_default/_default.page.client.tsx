@@ -3,7 +3,6 @@ import React from 'react';
 import { getPage } from 'vite-plugin-ssr/client';
 import { PageLayout } from './page-layout';
 import 'virtual:windi.css';
-import 'virtual:windi-devtools';
 
 hydrate();
 

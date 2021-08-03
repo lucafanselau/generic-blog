@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import { Header } from '../_components/header';
+import { Header } from '../components/header';
 
 export const PageLayout: FC = ({ children }) => {
     return (
