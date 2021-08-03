@@ -1,18 +1,18 @@
 {
-  "compilerOptions": {
-    "strict": true,
-    "module": "ESNext",
-    "moduleResolution": "Node",
-    "target": "ES2017",
-    "lib": ["DOM"],
-    "jsx": "react",
-    "skipLibCheck": true,
-    "esModuleInterop": true
-  },
-  "ts-node": {
-    "transpileOnly": true,
     "compilerOptions": {
-      "module": "CommonJS"
+        "strict": true,
+        "module": "ESNext",
+        "moduleResolution": "Node",
+        "target": "ES2017",
+        "lib": ["DOM"],
+        "jsx": "react",
+        "skipLibCheck": true,
+        "esModuleInterop": true
+    },
+    "ts-node": {
+        "transpileOnly": true,
+        "compilerOptions": {
+            "module": "CommonJS"
+        }
     }
-  }
 }
