@@ -1,6 +1,7 @@
 #[macro_use]
 mod utils;
 mod game;
+pub mod input;
 mod render;
 mod world;
 

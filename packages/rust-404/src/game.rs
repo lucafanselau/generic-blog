@@ -1,13 +1,23 @@
+use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::Instant;
 
+use super::utils;
+use crate::input::InputState;
+use crate::input::Key;
+use crate::render::camera::Camera;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::EventTarget;
+use web_sys::KeyboardEvent;
 use web_sys::Window;
 use web_sys::{HtmlCanvasElement, Performance, WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
 struct GameState {
     program: WebGlProgram,
     startup: f64,
+    camera: Camera,
+    input: InputState,
 }
 
 #[wasm_bindgen]
@@ -18,8 +28,6 @@ pub struct Game {
 
     state: Option<GameState>,
 }
-
-use super::utils;
 
 #[wasm_bindgen]
 impl Game {
@@ -53,13 +61,13 @@ impl Game {
             WebGl2RenderingContext::VERTEX_SHADER,
             r##"#version 300 es
 
-        uniform vec4 offset;
+        uniform mat4 view_projection;
 
         in vec4 position;
 
         void main() {
 
-            gl_Position = offset + position;
+            gl_Position = view_projection * position;
         }
         "##,
         )?;
@@ -127,12 +135,24 @@ impl Game {
 
         self.context.bind_vertex_array(Some(&vao));
 
+        let input = InputState::register(self.window.document().unwrap(), &self.canvas);
+        let camera = Camera::new(&input);
+
         self.state = Some(GameState {
             program,
             startup: self.sample_time(),
+            camera,
+            input,
         });
 
         Ok(())
+    }
+
+    pub fn update(&mut self, dt: f32) {
+        if let Some(ref mut state) = &mut self.state {
+            // log!("Got dt: {}", dt);
+            state.camera.update(dt, &state.input);
+        }
     }
 
     pub fn render(&self) -> Result<(), JsValue> {
@@ -140,10 +160,13 @@ impl Game {
             self.context.clear_color(0.5, 0.2, 0.8, 1.0);
             self.context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-            let loc = self.context.get_uniform_location(&state.program, "offset");
-            let elapsed = (self.sample_time() - state.startup) / 1000.0f64;
+            let loc = self
+                .context
+                .get_uniform_location(&state.program, "view_projection");
+            // let elapsed = (self.sample_time() - state.startup) / 1000.0f64;
+            let view_projection = state.camera.to_matrix().to_cols_array();
             self.context
-                .uniform4f(loc.as_ref(), elapsed.sin() as f32, 0.0, 0.0, 0.0);
+                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
 
             self.context
                 .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);

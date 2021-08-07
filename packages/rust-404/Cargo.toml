@@ -41,6 +41,8 @@ features = [
   'WebGlProgram',
   'WebGlShader',
   'Performance',
+  'KeyboardEvent',
+  'MouseEvent',
   'Window',
   "console"
 ]
