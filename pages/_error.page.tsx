@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, MouseEvent } from 'react';
+import React, { useCallback, useEffect, MouseEvent, FC, useRef, useState } from 'react';
 import init, { Game } from 'rust-404';
 
 export { Page };
@@ -10,41 +10,54 @@ const renderLoop = (g: Game, last: number) => {
     requestAnimationFrame(() => renderLoop(g, now));
 };
 
-function Page({ is404 }: { is404: boolean }) {
+const Page404: FC = () => {
+    const [game, setGame] = useState<Game | undefined>(undefined);
+
     useEffect(() => {
-        if (is404) {
-            (async () => {
-                await init();
-            })();
-        }
-    }, [is404]);
+        (async () => {
+            await init();
+        })();
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (game !== undefined) game.free();
+        };
+    }, [game]);
 
     const onClick = useCallback(async (event: MouseEvent<HTMLCanvasElement>) => {
         // lock the pointer
         event.currentTarget.requestPointerLock();
 
-        const g = Game.new();
-        g.init();
+        if (game === undefined) {
+            const g = Game.new();
+            g.init();
 
-        // start render loop
-        let startup = window.performance.now();
-        renderLoop(g, startup);
+            // start render loop
+            let startup = window.performance.now();
+            setGame(g);
+            renderLoop(g, startup);
+        }
     }, []);
 
-    if (is404) {
-        return (
-            <div className={'flex flex-col space-y-2 max-w-full items-center prose '}>
-                <h2>404 Page Not Found</h2>
-                <p>This page could not be found. You can however enjoy urself playing a little</p>
-                <div
-                    className={
-                        'rounded-xl shadow-dark-50 shadow-md from-green-200 to-blue-100 bg-gradient-to-l p-4 dark:bg-gray-800'
-                    }
-                >
-                    <canvas id={'canvas'} width={600} height={400} className={''} onClick={onClick} />
-                </div>
+    return (
+        <div className={'flex flex-col space-y-2 max-w-full items-center prose '}>
+            <h2>404 Page Not Found</h2>
+            <p>This page could not be found. You can however enjoy urself playing a little</p>
+            <div
+                className={
+                    'rounded-xl shadow-dark-50 shadow-md from-green-200 to-blue-100 bg-gradient-to-l p-4 dark:bg-gray-800'
+                }
+            >
+                <canvas id={'canvas'} width={600} height={400} className={''} onClick={onClick} />
             </div>
-        );
+        </div>
+    );
+};
+
+function Page({ is404 }: { is404: boolean }) {
+    if (is404) {
+        return <Page404 />;
     } else {
         return (
             <>

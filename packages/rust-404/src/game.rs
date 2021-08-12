@@ -14,8 +14,6 @@ use web_sys::Window;
 use web_sys::{HtmlCanvasElement, Performance, WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
 struct GameState {
-    program: WebGlProgram,
-    startup: f64,
     camera: Camera,
     input: InputState,
 }
@@ -56,36 +54,6 @@ impl Game {
     }
 
     pub fn init(&mut self) -> Result<(), JsValue> {
-        let vert_shader = Self::compile_shader(
-            &self.context,
-            WebGl2RenderingContext::VERTEX_SHADER,
-            r##"#version 300 es
-
-        uniform mat4 view_projection;
-
-        in vec4 position;
-
-        void main() {
-
-            gl_Position = view_projection * position;
-        }
-        "##,
-        )?;
-
-        let frag_shader = Self::compile_shader(
-            &self.context,
-            WebGl2RenderingContext::FRAGMENT_SHADER,
-            r##"#version 300 es
-
-        precision highp float;
-        out vec4 outColor;
-
-        void main() {
-            outColor = vec4(1, 1, 1, 1);
-        }
-        "##,
-        )?;
-        let program = Self::link_program(&self.context, &vert_shader, &frag_shader)?;
         self.context.use_program(Some(&program));
 
         let vertices: [f32; 9] = [-0.7, -0.7, 0.0, 0.7, -0.7, 0.0, 0.0, 0.4, 0.0];
@@ -140,7 +108,6 @@ impl Game {
 
         self.state = Some(GameState {
             program,
-            startup: self.sample_time(),
             camera,
             input,
         });
@@ -157,7 +124,8 @@ impl Game {
 
     pub fn render(&self) -> Result<(), JsValue> {
         if let Some(ref state) = self.state {
-            self.context.clear_color(0.5, 0.2, 0.8, 1.0);
+            self.context
+                .clear_color(191.0 / 255.0, 219.0 / 255.0, 254.0 / 255.0, 1.0);
             self.context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
             let loc = self
@@ -172,62 +140,5 @@ impl Game {
                 .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, 3);
         }
         Ok(())
-    }
-
-    fn compile_shader(
-        context: &WebGl2RenderingContext,
-        shader_type: u32,
-        source: &str,
-    ) -> Result<WebGlShader, String> {
-        let shader = context
-            .create_shader(shader_type)
-            .ok_or_else(|| String::from("Unable to create shader object"))?;
-        context.shader_source(&shader, source);
-        context.compile_shader(&shader);
-
-        if context
-            .get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
-            .as_bool()
-            .unwrap_or(false)
-        {
-            Ok(shader)
-        } else {
-            Err(context
-                .get_shader_info_log(&shader)
-                .unwrap_or_else(|| String::from("Unknown error creating shader")))
-        }
-    }
-
-    fn link_program(
-        context: &WebGl2RenderingContext,
-        vert_shader: &WebGlShader,
-        frag_shader: &WebGlShader,
-    ) -> Result<WebGlProgram, String> {
-        let program = context
-            .create_program()
-            .ok_or_else(|| String::from("Unable to create shader object"))?;
-
-        context.attach_shader(&program, vert_shader);
-        context.attach_shader(&program, frag_shader);
-        context.link_program(&program);
-
-        if context
-            .get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
-            .as_bool()
-            .unwrap_or(false)
-        {
-            Ok(program)
-        } else {
-            Err(context
-                .get_program_info_log(&program)
-                .unwrap_or_else(|| String::from("Unknown error creating program object")))
-        }
-    }
-
-    fn sample_time(&self) -> f64 {
-        self.window
-            .performance()
-            .map(|p| p.now())
-            .expect("failed to sample time")
     }
 }

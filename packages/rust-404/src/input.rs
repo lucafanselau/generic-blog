@@ -4,7 +4,7 @@ use std::{
 };
 
 use wasm_bindgen::{prelude::Closure, JsCast};
-use web_sys::{Document, EventTarget, HtmlCanvasElement, KeyboardEvent, MouseEvent, Window};
+use web_sys::{Document, EventTarget, HtmlCanvasElement, KeyboardEvent, MouseEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -132,5 +132,12 @@ impl Drop for InputState {
                 self.keyup_callback.as_ref().unchecked_ref(),
             )
             .expect("failed to remove keyup handler");
+
+        self.event_target
+            .remove_event_listener_with_callback(
+                "mousemove",
+                self.mouse_callback.as_ref().unchecked_ref(),
+            )
+            .expect("failed to remove mousemove handler");
     }
 }

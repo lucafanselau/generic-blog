@@ -5,4 +5,8 @@ pub struct Mesh {
     buffer: WebGlBuffer,
 }
 
-impl Mesh {}
+impl Mesh {
+    pub fn new(vao: WebGlVertexArrayObject, buffer: WebGlBuffer) -> Self {
+        Self { vao, buffer }
+    }
+}
