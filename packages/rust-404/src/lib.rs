@@ -1,5 +1,8 @@
+#![feature(const_fn_floating_point_arithmetic)]
+
 #[macro_use]
 mod utils;
+pub mod atlas;
 mod game;
 pub mod input;
 mod render;

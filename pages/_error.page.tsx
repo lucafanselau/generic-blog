@@ -21,7 +21,7 @@ const Page404: FC = () => {
 
     useEffect(() => {
         return () => {
-            if (game !== undefined) game.free();
+            // if (game !== undefined) game.free();
         };
     }, [game]);
 
@@ -30,8 +30,7 @@ const Page404: FC = () => {
         event.currentTarget.requestPointerLock();
 
         if (game === undefined) {
-            const g = Game.new();
-            g.init();
+            const g = await Game.new();
 
             // start render loop
             let startup = window.performance.now();
@@ -50,6 +49,7 @@ const Page404: FC = () => {
                 }
             >
                 <canvas id={'canvas'} width={600} height={400} className={''} onClick={onClick} />
+                <img src={'/dirt.png'} />
             </div>
         </div>
     );
