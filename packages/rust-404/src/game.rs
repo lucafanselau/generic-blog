@@ -10,6 +10,7 @@ use crate::render::camera::Camera;
 use crate::render::mesh::cube;
 use crate::render::mesh::Mesh;
 use crate::render::Renderer;
+use crate::world::chunk::Chunk;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::EventTarget;
@@ -59,10 +60,12 @@ impl Game {
 
         let renderer = Renderer::new(context.clone()).expect("failed to create renderer");
 
-        let vertices = cube(glam::Vec3::splat(1.0));
+        // let vertices = cube(glam::Vec3::splat(1.0));
+
+        let chunk = Chunk::new();
 
         let mesh = renderer
-            .create_mesh(&vertices)
+            .create_mesh(&chunk.chunk_vertices())
             .expect("failed to create mesh");
 
         let atlas = Atlas::new(&renderer).await.expect("failed to create atlas");

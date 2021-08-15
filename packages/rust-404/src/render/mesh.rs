@@ -66,3 +66,87 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
 
     vertices
 }
+
+pub enum Face {
+    NegativeX,
+    PositiveX,
+    NegativeY,
+    PositiveY,
+    NegativeZ,
+    PositiveZ,
+}
+
+impl Face {
+    pub const FACES: [Self; 6] = [
+        Self::NegativeX,
+        Self::PositiveX,
+        Self::NegativeY,
+        Self::PositiveY,
+        Self::NegativeZ,
+        Self::PositiveZ,
+    ];
+
+    pub fn normal(&self) -> glam::Vec3 {
+        self.neighbord_dir().as_f32()
+    }
+
+    pub fn neighbord_dir(&self) -> glam::IVec3 {
+        match *self {
+            Face::NegativeX => -glam::IVec3::X,
+            Face::PositiveX => glam::IVec3::X,
+            Face::NegativeY => -glam::IVec3::Y,
+            Face::PositiveY => glam::IVec3::Y,
+            Face::NegativeZ => -glam::IVec3::Z,
+            Face::PositiveZ => glam::IVec3::Z,
+        }
+    }
+
+    pub fn orthogonal(&self) -> glam::Vec3 {
+        match *self {
+            Face::NegativeX => UP,
+            Face::PositiveX => UP,
+            Face::NegativeY => glam::Vec3::X,
+            Face::PositiveY => glam::Vec3::X,
+            Face::NegativeZ => UP,
+            Face::PositiveZ => UP,
+        }
+    }
+}
+
+fn calc_face(
+    norm: glam::Vec3,
+    orthogonal: glam::Vec3,
+    pos: &glam::IVec3,
+    vertices: &mut Vec<Vertex>,
+) {
+    let scale = 0.5f32;
+    let base = pos.as_f32() + norm * scale;
+    let orthogonal = orthogonal * scale;
+
+    let right = (norm.cross(orthogonal)).normalize() * scale;
+
+    let vec = |a: f32, b: f32| -> Vertex {
+        let tex_coord = glam::vec2(a, b) * 0.5 + glam::vec2(0.5, 0.5);
+        // let tex_coord = Textures::DIRT.base + tex_coord * Textures::DIRT.extend;
+
+        Vertex {
+            pos: base + (a * right + b * orthogonal),
+            normal: norm,
+            tex_coord,
+        }
+    };
+
+    // First triangle
+    vertices.push(vec(-1.0, 1.0));
+    vertices.push(vec(-1.0, -1.0));
+    vertices.push(vec(1.0, -1.0));
+
+    // second triangle
+    vertices.push(vec(-1.0, 1.0));
+    vertices.push(vec(1.0, -1.0));
+    vertices.push(vec(1.0, 1.0));
+}
+
+pub fn build_face(vec: &mut Vec<Vertex>, face: &Face, pos: &glam::IVec3) {
+    calc_face(face.normal(), face.orthogonal(), pos, vec)
+}

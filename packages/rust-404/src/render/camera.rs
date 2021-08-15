@@ -49,7 +49,7 @@ impl Camera {
 
     pub fn to_matrix(&self) -> glam::Mat4 {
         // TODO: Caching system
-        let projection = glam::Mat4::perspective_rh_gl(45.0f32.to_radians(), 6.0 / 4.0, 0.1, 10.0);
+        let projection = glam::Mat4::perspective_rh_gl(45.0f32.to_radians(), 6.0 / 4.0, 0.1, 100.0);
         let view = glam::Mat4::look_at_rh(self.pos, self.pos + self.dir, UP);
         projection * view
     }

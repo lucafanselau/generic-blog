@@ -1,2 +1,2 @@
-mod block;
-mod chunk;
+pub mod block;
+pub mod chunk;
