@@ -272,6 +272,27 @@ impl Renderer {
         self.context
             .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
 
+        self.context.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+            WebGl2RenderingContext::NEAREST_MIPMAP_LINEAR as i32,
+        );
+        self.context.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+            WebGl2RenderingContext::NEAREST as i32,
+        );
+        self.context.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_S,
+            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+        );
+        self.context.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_T,
+            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
+        );
+
         for mesh in task.meshes.iter() {
             self.context.bind_vertex_array(Some(&mesh.vao));
 

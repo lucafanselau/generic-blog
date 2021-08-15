@@ -34,7 +34,7 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
 
         let vec = |a: f32, b: f32| -> Vertex {
             let tex_coord = glam::vec2(a, b) * 0.5 + glam::vec2(0.5, 0.5);
-            let tex_coord = Textures::DIRT.base + tex_coord * Textures::DIRT.extend;
+            // let tex_coord = Textures::DIRT.base + tex_coord * Textures::DIRT.extend;
 
             Vertex {
                 pos: base + (a * right + b * orthogonal),

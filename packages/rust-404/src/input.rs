@@ -12,10 +12,12 @@ pub enum Key {
     A,
     S,
     D,
+    Space,
+    LShift,
 }
 
 impl Key {
-    pub const KEYS: [Key; 4] = [Key::W, Key::A, Key::S, Key::D];
+    pub const KEYS: [Key; 6] = [Key::W, Key::A, Key::S, Key::D, Key::LShift, Key::Space];
 
     pub fn key_code(&self) -> u32 {
         // taken from https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/keyCode
@@ -24,6 +26,8 @@ impl Key {
             Key::A => 65,
             Key::S => 83,
             Key::D => 68,
+            Key::Space => 32,
+            Key::LShift => 16,
         }
     }
 }

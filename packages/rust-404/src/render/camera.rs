@@ -26,6 +26,8 @@ impl Camera {
             Key::A => UP.cross(self.dir),
             Key::S => -1.0 * self.dir,
             Key::D => -1.0 * UP.cross(self.dir),
+            Key::Space => UP,
+            Key::LShift => -UP,
         }
     }
 

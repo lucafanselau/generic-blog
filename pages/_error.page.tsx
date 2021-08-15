@@ -49,7 +49,6 @@ const Page404: FC = () => {
                 }
             >
                 <canvas id={'canvas'} width={600} height={400} className={''} onClick={onClick} />
-                <img src={'/dirt.png'} />
             </div>
         </div>
     );
