@@ -1,7 +1,4 @@
-use std::sync::{
-    mpsc::{self, Receiver},
-    Arc, RwLock,
-};
+use std::sync::mpsc::{self, Receiver};
 
 use glam;
 

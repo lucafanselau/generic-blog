@@ -3,10 +3,10 @@ use std::rc::Rc;
 use __core::cmp::Ordering;
 use anyhow::anyhow;
 use bytemuck::*;
-use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
+use wasm_bindgen::{prelude::Closure, JsCast};
 use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer,
-    WebGlProgram, WebGlShader, WebGlTexture, WebGlVertexArrayObject,
+    HtmlImageElement, WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer, WebGlProgram,
+    WebGlShader, WebGlTexture, WebGlVertexArrayObject,
 };
 
 use crate::{atlas::Atlas, world::chunk::CHUNK_SIZE};

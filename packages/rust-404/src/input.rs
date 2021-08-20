@@ -4,7 +4,7 @@ use std::{
 };
 
 use wasm_bindgen::{prelude::Closure, JsCast};
-use web_sys::{Document, EventTarget, HtmlCanvasElement, KeyboardEvent, MouseEvent};
+use web_sys::{Document, EventTarget, KeyboardEvent, MouseEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -42,7 +42,7 @@ pub struct InputState {
 }
 
 impl InputState {
-    pub fn register(document: Document, canvas: &HtmlCanvasElement) -> Self {
+    pub fn register(document: Document) -> Self {
         let key_state = Arc::new(RwLock::new(HashMap::new()));
         let mouse_cbs: Arc<RwLock<Vec<Box<dyn Fn(i32, i32)>>>> = Default::default();
 

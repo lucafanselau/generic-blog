@@ -1,7 +1,5 @@
 use web_sys::{WebGlBuffer, WebGlVertexArrayObject};
 
-use crate::atlas::Textures;
-
 use super::camera::UP;
 use super::Vertex;
 

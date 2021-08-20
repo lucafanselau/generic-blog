@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
-    Grass,
-    Stone,
+    // Grass,
+    // Stone,
     Dirt,
     Air,
 }
@@ -12,9 +12,9 @@ pub struct Block {
 }
 
 impl Block {
-    pub const STONE: Block = Block {
-        block_type: BlockType::Stone,
-    };
+    // pub const STONE: Block = Block {
+    //     block_type: BlockType::Stone,
+    // };
 
     pub const DIRT: Block = Block {
         block_type: BlockType::Dirt,
