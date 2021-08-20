@@ -17,7 +17,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    const SPEED: f32 = 1.568;
+    const SPEED: f32 = 2.568;
     const MOUSE_SENSITIVITY: f32 = 0.687;
 
     pub fn move_dir(&self, key: &Key) -> glam::Vec3 {
@@ -61,6 +61,7 @@ impl Camera {
             }
         }
 
+        let mut recompute = false;
         if let Some((dx, dy)) = self
             .receiver
             .try_iter()
@@ -70,6 +71,10 @@ impl Camera {
             self.yaw += Self::MOUSE_SENSITIVITY * dx as f32;
             self.pitch += Self::MOUSE_SENSITIVITY * dy as f32;
 
+            recompute = true;
+        }
+
+        if recompute {
             let pitch = self.pitch.to_radians();
             let yaw = self.yaw.to_radians();
             let xz_l = pitch.cos();

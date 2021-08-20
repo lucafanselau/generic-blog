@@ -1,22 +1,29 @@
 use std::rc::Rc;
 
+use __core::cmp::Ordering;
 use anyhow::anyhow;
 use bytemuck::*;
 use wasm_bindgen::{prelude::Closure, JsCast, JsValue};
 use web_sys::{
-    HtmlCanvasElement, HtmlImageElement, WebGl2RenderingContext, WebGlBuffer, WebGlProgram,
-    WebGlShader, WebGlTexture, WebGlVertexArrayObject,
+    HtmlCanvasElement, HtmlImageElement, WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer,
+    WebGlProgram, WebGlShader, WebGlTexture, WebGlVertexArrayObject,
 };
 
-use crate::atlas::Atlas;
+use crate::{atlas::Atlas, world::chunk::CHUNK_SIZE};
 
-use self::{camera::Camera, mesh::Mesh};
+use self::{
+    camera::Camera,
+    mesh::{Face, Mesh},
+};
 
 pub mod camera;
 pub mod mesh;
 
-const VERTEX_CODE: &'static str = include_str!("solid.vert");
-const FRAGMENT_CODE: &'static str = include_str!("solid.frag");
+const VERTEX_CODE: &'static str = include_str!("shaders/solid.vert");
+const FRAGMENT_CODE: &'static str = include_str!("shaders/solid.frag");
+
+const PICKING_VERTEX_CODE: &'static str = include_str!("shaders/picking.vert");
+const PICKING_FRAGMENT_CODE: &'static str = include_str!("shaders/picking.frag");
 
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
@@ -24,6 +31,7 @@ pub struct Vertex {
     pos: glam::Vec3,
     normal: glam::Vec3,
     tex_coord: glam::Vec2,
+    base_loc: glam::Vec3,
 }
 
 const FLOAT_SIZE: i32 = std::mem::size_of::<f32>() as i32;
@@ -41,10 +49,12 @@ impl<'a> RenderTask<'a> {
 pub struct Renderer {
     context: WebGl2RenderingContext,
     program: WebGlProgram,
+    picking_program: WebGlProgram,
+    picking_fb: WebGlFramebuffer,
 }
 
 impl Renderer {
-    pub fn new(context: WebGl2RenderingContext) -> Result<Self, JsValue> {
+    pub fn new(context: WebGl2RenderingContext) -> anyhow::Result<Self> {
         let vert_shader =
             Self::compile_shader(&context, WebGl2RenderingContext::VERTEX_SHADER, VERTEX_CODE)?;
 
@@ -56,9 +66,86 @@ impl Renderer {
 
         let program = Self::link_program(&context, &vert_shader, &frag_shader)?;
 
+        let picking_vert = Self::compile_shader(
+            &context,
+            WebGl2RenderingContext::VERTEX_SHADER,
+            PICKING_VERTEX_CODE,
+        )?;
+
+        let picking_frag = Self::compile_shader(
+            &context,
+            WebGl2RenderingContext::FRAGMENT_SHADER,
+            PICKING_FRAGMENT_CODE,
+        )?;
+
+        let picking_program = Self::link_program(&context, &picking_vert, &picking_frag)?;
+
+        // create picking framebuffer
+        let picking_fb = {
+            let texture: WebGlTexture = context
+                .create_texture()
+                .ok_or(anyhow!("failed to create picking color attachment"))?;
+
+            context.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&texture));
+
+            context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_array_buffer_view(
+                WebGl2RenderingContext::TEXTURE_2D,
+                0,
+                WebGl2RenderingContext::RGBA as i32,
+                600,
+                400,
+                0,
+                WebGl2RenderingContext::RGBA,
+                WebGl2RenderingContext::UNSIGNED_BYTE,
+                None,
+            ).map_err(|e| anyhow!("failed to upload picking texture data: {:?}", e))?;
+
+            let renderbuffer = context
+                .create_renderbuffer()
+                .ok_or(anyhow!("failed to create picking depth renderbuffer"))?;
+
+            context.bind_renderbuffer(WebGl2RenderingContext::RENDERBUFFER, Some(&renderbuffer));
+
+            context.renderbuffer_storage(
+                WebGl2RenderingContext::RENDERBUFFER,
+                WebGl2RenderingContext::DEPTH_COMPONENT16,
+                600,
+                400,
+            );
+
+            let fb = context
+                .create_framebuffer()
+                .ok_or(anyhow!("failed to create picking framebuffer"))?;
+
+            context.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&fb));
+
+            context.framebuffer_texture_2d(
+                WebGl2RenderingContext::FRAMEBUFFER,
+                WebGl2RenderingContext::COLOR_ATTACHMENT0,
+                WebGl2RenderingContext::TEXTURE_2D,
+                Some(&texture),
+                0,
+            );
+
+            // make a depth buffer and the same size as the targetTexture
+            context.framebuffer_renderbuffer(
+                WebGl2RenderingContext::FRAMEBUFFER,
+                WebGl2RenderingContext::DEPTH_ATTACHMENT,
+                WebGl2RenderingContext::RENDERBUFFER,
+                Some(&renderbuffer),
+            );
+
+            fb
+        };
+
         context.enable(WebGl2RenderingContext::DEPTH_TEST);
 
-        Ok(Self { context, program })
+        Ok(Self {
+            context,
+            program,
+            picking_program,
+            picking_fb,
+        })
     }
 
     pub fn create_mesh(&self, vertices: &[Vertex]) -> anyhow::Result<Mesh> {
@@ -88,13 +175,15 @@ impl Renderer {
             WebGl2RenderingContext::STATIC_DRAW,
         );
 
+        let size = 11 * FLOAT_SIZE;
+
         // Setup vao with vertex attribute data
         self.context.vertex_attrib_pointer_with_i32(
             0,
             3,
             WebGl2RenderingContext::FLOAT,
             false,
-            8 * FLOAT_SIZE,
+            size,
             0,
         );
         self.context.vertex_attrib_pointer_with_i32(
@@ -102,7 +191,7 @@ impl Renderer {
             3,
             WebGl2RenderingContext::FLOAT,
             false,
-            8 * FLOAT_SIZE,
+            size,
             3 * FLOAT_SIZE,
         );
         self.context.vertex_attrib_pointer_with_i32(
@@ -110,23 +199,20 @@ impl Renderer {
             2,
             WebGl2RenderingContext::FLOAT,
             false,
-            8 * FLOAT_SIZE,
+            size,
             6 * FLOAT_SIZE,
         );
-        let position_attribute_location =
-            self.context.get_attrib_location(&self.program, "position");
 
-        let normal_attribute_location = self.context.get_attrib_location(&self.program, "norm");
-        let tex_coord_attribute_location =
-            self.context.get_attrib_location(&self.program, "tex_coord");
+        self.context.vertex_attrib_pointer_with_i32(
+            3,
+            3,
+            WebGl2RenderingContext::FLOAT,
+            false,
+            size,
+            8 * FLOAT_SIZE,
+        );
 
-        self.context
-            .enable_vertex_attrib_array(position_attribute_location as u32);
-        self.context
-            .enable_vertex_attrib_array(normal_attribute_location as u32);
-        self.context
-            .enable_vertex_attrib_array(tex_coord_attribute_location as u32);
-
+        (0..4u32).for_each(|i| self.context.enable_vertex_attrib_array(i));
         Ok(Mesh::new(vao, buffer, vertices.len() as i32))
     }
 
@@ -140,10 +226,10 @@ impl Renderer {
         context: &WebGl2RenderingContext,
         shader_type: u32,
         source: &str,
-    ) -> Result<WebGlShader, String> {
+    ) -> anyhow::Result<WebGlShader> {
         let shader = context
             .create_shader(shader_type)
-            .ok_or_else(|| String::from("Unable to create shader object"))?;
+            .ok_or(anyhow!("Unable to create shader object"))?;
         context.shader_source(&shader, source);
         context.compile_shader(&shader);
 
@@ -156,7 +242,8 @@ impl Renderer {
         } else {
             Err(context
                 .get_shader_info_log(&shader)
-                .unwrap_or_else(|| String::from("Unknown error creating shader")))
+                .map(|s| anyhow!("failed to compile shader: {}", s))
+                .unwrap_or(anyhow!("Unknown error creating shader")))
         }
     }
 
@@ -225,10 +312,10 @@ impl Renderer {
         context: &WebGl2RenderingContext,
         vert_shader: &WebGlShader,
         frag_shader: &WebGlShader,
-    ) -> Result<WebGlProgram, String> {
+    ) -> anyhow::Result<WebGlProgram> {
         let program = context
             .create_program()
-            .ok_or_else(|| String::from("Unable to create shader object"))?;
+            .ok_or(anyhow!("Unable to create shader object"))?;
 
         context.attach_shader(&program, vert_shader);
         context.attach_shader(&program, frag_shader);
@@ -243,7 +330,8 @@ impl Renderer {
         } else {
             Err(context
                 .get_program_info_log(&program)
-                .unwrap_or_else(|| String::from("Unknown error creating program object")))
+                .map(|s| anyhow!("failed to link program: {}", s))
+                .unwrap_or(anyhow!("Unknown error creating program object")))
         }
     }
 
@@ -253,51 +341,130 @@ impl Renderer {
         }
     }
 
-    pub fn render<'a>(&self, task: RenderTask<'a>, camera: &Camera, atlas: &Atlas) {
-        self.context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-        self.context.use_program(Some(&self.program));
-
-        let loc = self
-            .context
-            .get_uniform_location(&self.program, "view_projection");
-        // let elapsed = (self.sample_time() - state.startup) / 1000.0f64;
+    pub fn render<'a>(
+        &self,
+        task: RenderTask<'a>,
+        camera: &Camera,
+        atlas: &Atlas,
+        selection_ring: &Mesh,
+    ) {
         let view_projection = camera.to_matrix().to_cols_array();
-        self.context
-            .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
 
-        self.context
-            .active_texture(WebGl2RenderingContext::TEXTURE0);
+        // First pass (Picking framebuffer)
+        let focused = {
+            self.context
+                .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&self.picking_fb));
+            self.context.clear(
+                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+            );
 
-        self.context
-            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
+            self.context.use_program(Some(&self.picking_program));
 
-        self.context.tex_parameteri(
-            WebGl2RenderingContext::TEXTURE_2D,
-            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
-            WebGl2RenderingContext::NEAREST_MIPMAP_LINEAR as i32,
-        );
-        self.context.tex_parameteri(
-            WebGl2RenderingContext::TEXTURE_2D,
-            WebGl2RenderingContext::TEXTURE_MAG_FILTER,
-            WebGl2RenderingContext::NEAREST as i32,
-        );
-        self.context.tex_parameteri(
-            WebGl2RenderingContext::TEXTURE_2D,
-            WebGl2RenderingContext::TEXTURE_WRAP_S,
-            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
-        );
-        self.context.tex_parameteri(
-            WebGl2RenderingContext::TEXTURE_2D,
-            WebGl2RenderingContext::TEXTURE_WRAP_T,
-            WebGl2RenderingContext::CLAMP_TO_EDGE as i32,
-        );
+            let loc = self
+                .context
+                .get_uniform_location(&self.picking_program, "view_projection");
+            self.context
+                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
 
-        for mesh in task.meshes.iter() {
-            self.context.bind_vertex_array(Some(&mesh.vao));
+            for mesh in task.meshes.iter() {
+                self.context.bind_vertex_array(Some(&mesh.vao));
+
+                self.context
+                    .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
+            }
+
+            // read back pixel (probably a bad time for that)
+            // NOTE: Maybe do 2x2 area and like avg over that
+            let mut data = [0u8; 4];
+            self.context
+                .read_pixels_with_u8_array_and_dst_offset(
+                    300,
+                    200,
+                    1,
+                    1,
+                    WebGl2RenderingContext::RGBA,
+                    WebGl2RenderingContext::UNSIGNED_BYTE,
+                    &mut data,
+                    0,
+                )
+                .expect("failed to read back data");
+
+            // -> by now data should be the 4 pixel value
+            // Do some simple calculation to figure out the coordinate
+            if data[3] /*eg. alpha*/ != 0 {
+                let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_f32();
+
+                let delta = camera.pos - loc;
+                // And also figure out the face
+                let (f, _) = Face::FACES
+                    .iter()
+                    // TODO: Angle in between is fucked
+                    .map(|f| (f, f.normal().angle_between(delta)))
+                    .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+                    .unwrap();
+
+                Some((loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32), f))
+            } else {
+                None
+            }
+        };
+
+        // Second Pass (Main Pass)
+        {
+            self.context
+                .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
+
+            self.context.clear(
+                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+            );
+
+            self.context.use_program(Some(&self.program));
+
+            let loc = self
+                .context
+                .get_uniform_location(&self.program, "view_projection");
+            self.context
+                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
+
+            let loc = self.context.get_uniform_location(&self.program, "model");
+            self.context.uniform_matrix4fv_with_f32_array(
+                loc.as_ref(),
+                false,
+                &glam::Mat4::IDENTITY.to_cols_array(),
+            );
 
             self.context
-                .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
+                .active_texture(WebGl2RenderingContext::TEXTURE0);
+
+            self.context
+                .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
+
+            for mesh in task.meshes.iter() {
+                self.context.bind_vertex_array(Some(&mesh.vao));
+
+                self.context
+                    .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
+            }
+
+            if let Some((focused, face)) = focused {
+                let selection_model_matrix =
+                    glam::Mat4::from_translation(focused + face.normal() * 0.5).to_cols_array();
+                self.context.uniform_matrix4fv_with_f32_array(
+                    loc.as_ref(),
+                    false,
+                    &selection_model_matrix,
+                );
+
+                self.context
+                    .bind_texture(WebGl2RenderingContext::TEXTURE_2D, None);
+
+                self.context.bind_vertex_array(Some(&selection_ring.vao));
+                self.context.draw_arrays(
+                    WebGl2RenderingContext::TRIANGLES,
+                    0,
+                    selection_ring.vertices_count,
+                );
+            }
         }
     }
 }

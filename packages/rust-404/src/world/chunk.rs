@@ -8,7 +8,8 @@ use crate::{
 
 use super::block::Block;
 
-const CHUNK_SIZE: usize = 4;
+// NOTE: That has to be kept in sync with picking.vert
+pub const CHUNK_SIZE: usize = 4;
 
 pub struct Chunk {
     blocks: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],

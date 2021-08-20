@@ -7,6 +7,7 @@ use crate::atlas::Atlas;
 use crate::input::InputState;
 use crate::input::Key;
 use crate::render::camera::Camera;
+use crate::render::mesh::build_selection_ring;
 use crate::render::mesh::cube;
 use crate::render::mesh::Mesh;
 use crate::render::Renderer;
@@ -34,6 +35,7 @@ pub struct Game {
     renderer: Renderer,
 
     mesh: Mesh,
+    selection_ring: Mesh,
     atlas: Atlas,
 }
 
@@ -68,6 +70,10 @@ impl Game {
             .create_mesh(&chunk.chunk_vertices())
             .expect("failed to create mesh");
 
+        let selection_ring = renderer
+            .create_mesh(&build_selection_ring())
+            .expect("failed to create selection ring mesh");
+
         let atlas = Atlas::new(&renderer).await.expect("failed to create atlas");
 
         Self {
@@ -78,6 +84,7 @@ impl Game {
             camera,
             renderer,
             mesh,
+            selection_ring,
             atlas,
         }
     }
@@ -90,6 +97,7 @@ impl Game {
     pub fn render(&self) {
         let mut task = self.renderer.task();
         task.push(&self.mesh);
-        self.renderer.render(task, &self.camera, &self.atlas);
+        self.renderer
+            .render(task, &self.camera, &self.atlas, &self.selection_ring);
     }
 }

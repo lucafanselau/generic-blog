@@ -21,23 +21,27 @@ const Page404: FC = () => {
 
     useEffect(() => {
         return () => {
-            // if (game !== undefined) game.free();
+            if (game !== undefined) game.free();
         };
     }, [game]);
 
-    const onClick = useCallback(async (event: MouseEvent<HTMLCanvasElement>) => {
-        // lock the pointer
-        event.currentTarget.requestPointerLock();
+    const onClick = useCallback(
+        async (event: MouseEvent<HTMLCanvasElement>) => {
+            // lock the pointer
+            event.currentTarget.requestPointerLock();
 
-        if (game === undefined) {
-            const g = await Game.new();
+            if (game === undefined) {
+                const g = await Game.new();
 
-            // start render loop
-            let startup = window.performance.now();
-            setGame(g);
-            renderLoop(g, startup);
-        }
-    }, []);
+                // start render loop
+                let startup = window.performance.now();
+                console.log('new');
+                setGame(g);
+                renderLoop(g, startup);
+            }
+        },
+        [game],
+    );
 
     return (
         <div className={'flex flex-col space-y-2 max-w-full items-center prose '}>

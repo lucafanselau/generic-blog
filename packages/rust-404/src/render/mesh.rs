@@ -40,6 +40,7 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
                 pos: base + (a * right + b * orthogonal),
                 normal: norm,
                 tex_coord,
+                base_loc: glam::Vec3::splat(0.0),
             }
         };
 
@@ -65,6 +66,34 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
     calc_from_norm(glam::vec3(0.0, -1.0, 0.0), glam::vec3(1.0, 0.0, 0.0));
 
     vertices
+}
+
+pub fn build_selection_ring() -> Vec<Vertex> {
+    let scale = 0.5f32;
+    let width = 0.15f32;
+    let dirs = [glam::Vec3::X, glam::Vec3::Z];
+    let signs = [-1f32, 1f32];
+    let mut result = Vec::new();
+    for (dir, sign, add_length) in dirs
+        .iter()
+        .enumerate()
+        .flat_map(|(index, d)| signs.iter().map(move |s| (d.clone(), s, index == 0)))
+    {
+        let base = sign * scale * dir;
+        let side = base.cross(UP).normalize();
+        let side = if add_length {
+            side * (1.0 + width)
+        } else {
+            side * (1.0 - width)
+        };
+        let extend = side + width * dir + width * UP;
+        result.extend(cube(extend).into_iter().map(|v| Vertex {
+            pos: v.pos + base,
+            ..v
+        }));
+    }
+
+    result
 }
 
 pub enum Face {
@@ -133,6 +162,7 @@ fn calc_face(
             pos: base + (a * right + b * orthogonal),
             normal: norm,
             tex_coord,
+            base_loc: pos.as_f32(),
         }
     };
 
