@@ -67,8 +67,8 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
 }
 
 pub fn build_selection_ring() -> Vec<Vertex> {
-    let scale = 0.5f32;
-    let width = 0.15f32;
+    const WIDTH: f32 = 0.05f32;
+    const SCALE: f32 = 0.5 - (WIDTH / 2.0);
     let dirs = [glam::Vec3::X, glam::Vec3::Z];
     let signs = [-1f32, 1f32];
     let mut result = Vec::new();
@@ -77,16 +77,16 @@ pub fn build_selection_ring() -> Vec<Vertex> {
         .enumerate()
         .flat_map(|(index, d)| signs.iter().map(move |s| (d.clone(), s, index == 0)))
     {
-        let base = sign * scale * dir;
-        let side = base.cross(UP).normalize();
+        let base = sign * SCALE * dir;
+        let side = dir.cross(UP).normalize();
         let side = if add_length {
-            side * (1.0 + width)
+            side
         } else {
-            side * (1.0 - width)
+            side * (1.0 - 2.0 * WIDTH)
         };
-        let extend = side + width * dir + width * UP;
+        let extend = side + WIDTH * dir + WIDTH * UP;
         result.extend(cube(extend).into_iter().map(|v| Vertex {
-            pos: v.pos + base,
+            pos: v.pos + base + (WIDTH * 0.5 * UP),
             ..v
         }));
     }

@@ -67,6 +67,7 @@ impl Camera {
             // Compute new dir
             self.yaw += Self::MOUSE_SENSITIVITY * dx as f32;
             self.pitch += Self::MOUSE_SENSITIVITY * dy as f32;
+            self.pitch = self.pitch.clamp(-89.9, 89.9);
 
             recompute = true;
         }
