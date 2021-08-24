@@ -94,6 +94,7 @@ pub fn build_selection_ring() -> Vec<Vertex> {
     result
 }
 
+#[derive(Debug, Clone)]
 pub enum Face {
     NegativeX,
     PositiveX,

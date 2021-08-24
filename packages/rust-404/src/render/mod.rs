@@ -12,7 +12,7 @@ use web_sys::{
 use crate::{atlas::Atlas, world::chunk::CHUNK_SIZE};
 
 use self::{
-    camera::Camera,
+    camera::{Camera, UP},
     mesh::{Face, Mesh},
 };
 
@@ -393,17 +393,50 @@ impl Renderer {
             // Do some simple calculation to figure out the coordinate
             if data[3] /*eg. alpha*/ != 0 {
                 let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_f32();
+                let loc = loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32);
 
-                let delta = camera.pos - loc;
                 // And also figure out the face
-                let (f, _) = Face::FACES
+                Face::FACES
                     .iter()
-                    // TODO: Angle in between is fucked
-                    .map(|f| (f, f.normal().angle_between(delta)))
-                    .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                    .unwrap();
+                    .map(|f| (f, f.normal()))
+                    // First of we only consider front-facing faces wrt. to camera direction, eg. with an angle between 90° and 180°
+                    // since |normal| = |view_dir| = 1 => cos(angle) = normal.dot(view_dir)
+                    // and for 90° <= angle <= 180° => -1 <= cos(angle) = normal.dot(view_dir) <= 0
+                    .filter(|(_f, normal)| normal.dot(camera.dir) <= 0.0f32)
+                    .filter_map(|(f, normal)| {
+                        // Next we need to find the hit point of the face plane (d (point on plane), n (normal)) and the ray (o (camera pos), rd (camera dir))
+                        // The plane is given by x.dot(n) = d.dot(n) and the ray by x = o + t * rd
+                        // plugging that into the plane equation yields a result for t = ((d - o) ∙ n) / (rd ∙ n) (where ∙ denotes the dot product)
+                        let d = loc + normal * 0.5f32;
+                        let divisor = camera.dir.dot(normal);
+                        // divisor == 0 indicates parallel dir -> eg. no collision or embedded (edge case does need to handle)
+                        if divisor == 0.0f32 {
+                            return None;
+                        }
+                        let t = (d - camera.pos).dot(normal) / divisor;
 
-                Some((loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32), f))
+                        // We then obtain the hit point through x = o + t * rd
+                        let x = camera.pos + t * camera.dir;
+                        // log!("found hit-point {} for loc {} and face {:?}", x, loc, f);
+
+                        // We can then obtain the u/v coordinates of the point in the plane trough the parametric form of the plane equation
+                        // x = d + u ∙ e0 + v ∙ e1 (where e0 and e1 are the edge vectors of the quad)
+                        let e0 = f.orthogonal();
+                        let e1 = e0.cross(normal).normalize();
+                        // Since e0 ∙ e1 = 0 (eg. orthogonal) and e0 ∙ e0 = e1 ∙ e1 = 1
+                        // we can compute u = (x - d) * e0 and v = (x - d) * e1
+                        let u = (x - d).dot(e0);
+                        let v = (x - d).dot(e1);
+                        // log!("[{:?}] u: {}, v: {}", f, u, v);
+                        // Then the hit-point lies inside of the quad if u, v ∈ [-0.5;0.5]
+                        (-0.5 <= u && u <= 0.5 && -0.5 <= v && v <= 0.5).then(|| (f, x))
+                    })
+                    .min_by(|(_, a), (_, b)| {
+                        a.distance_squared(camera.pos)
+                            .partial_cmp(&b.distance_squared(camera.pos))
+                            .unwrap_or(Ordering::Equal)
+                    })
+                    .map(|(f, _)| (loc, f.clone()))
             } else {
                 None
             }
@@ -447,12 +480,14 @@ impl Renderer {
             }
 
             if let Some((focused, face)) = focused {
-                let selection_model_matrix =
-                    glam::Mat4::from_translation(focused + face.normal() * 0.5).to_cols_array();
+                let normal = face.normal();
+                let selection_model_matrix = glam::Mat4::from_translation(focused + 0.5 * normal);
+                let selection_model_matrix = selection_model_matrix
+                    * glam::Mat4::from_axis_angle(UP.cross(normal), UP.angle_between(normal));
                 self.context.uniform_matrix4fv_with_f32_array(
                     loc.as_ref(),
                     false,
-                    &selection_model_matrix,
+                    &selection_model_matrix.to_cols_array(),
                 );
 
                 self.context

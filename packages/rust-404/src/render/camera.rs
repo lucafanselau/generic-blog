@@ -6,8 +6,8 @@ use crate::input::{InputState, Key};
 
 pub const UP: glam::Vec3 = glam::const_vec3!([0.0, 1.0, 0.0]);
 pub struct Camera {
-    pub pos: glam::Vec3,
-    dir: glam::Vec3,
+    pub(crate) pos: glam::Vec3,
+    pub(crate) dir: glam::Vec3,
     yaw: f32,
     pitch: f32,
     receiver: Receiver<(i32, i32)>,
@@ -19,10 +19,10 @@ impl Camera {
 
     pub fn move_dir(&self, key: &Key) -> glam::Vec3 {
         match key {
-            Key::W => self.dir,
-            Key::A => UP.cross(self.dir),
-            Key::S => -1.0 * self.dir,
-            Key::D => -1.0 * UP.cross(self.dir),
+            Key::W => glam::vec3(self.dir.x, 0.0, self.dir.z).normalize(),
+            Key::A => UP.cross(self.move_dir(&Key::W)),
+            Key::S => -1.0 * self.move_dir(&Key::W),
+            Key::D => -1.0 * self.move_dir(&Key::A),
             Key::Space => UP,
             Key::LShift => -UP,
         }
