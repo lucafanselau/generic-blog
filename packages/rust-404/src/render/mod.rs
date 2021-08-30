@@ -37,12 +37,15 @@ pub struct Vertex {
 const FLOAT_SIZE: i32 = std::mem::size_of::<f32>() as i32;
 
 pub struct RenderTask<'a> {
-    meshes: Vec<&'a Mesh>,
+    meshes: Vec<(&'a Mesh, Option<glam::Mat4>)>,
 }
 
 impl<'a> RenderTask<'a> {
     pub fn push(&mut self, mesh: &'a Mesh) {
-        self.meshes.push(mesh);
+        self.meshes.push((mesh, None));
+    }
+    pub fn push_with_transform(&mut self, mesh: &'a Mesh, transform: glam::Mat4) {
+        self.meshes.push((mesh, Some(transform)))
     }
 }
 
@@ -341,165 +344,157 @@ impl Renderer {
         }
     }
 
-    pub fn render<'a>(
-        &self,
-        task: RenderTask<'a>,
-        camera: &Camera,
-        atlas: &Atlas,
-        selection_ring: &Mesh,
-    ) {
-        let view_projection = camera.to_matrix().to_cols_array();
+    pub fn pick<'a>(&self, task: &RenderTask<'a>, camera: &Camera) -> Option<(glam::Vec3, Face)> {
+        self.context
+            .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&self.picking_fb));
+        self.context.clear(
+            WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+        );
 
-        // First pass (Picking framebuffer)
-        let focused = {
+        self.context.use_program(Some(&self.picking_program));
+
+        let loc = self
+            .context
+            .get_uniform_location(&self.picking_program, "view_projection");
+        self.context.uniform_matrix4fv_with_f32_array(
+            loc.as_ref(),
+            false,
+            camera.projection_view.as_ref(),
+        );
+
+        for (mesh, _transform) in task.meshes.iter() {
+            // TODO: Model matrix
+            self.context.bind_vertex_array(Some(&mesh.vao));
+
             self.context
-                .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&self.picking_fb));
-            self.context.clear(
-                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
-            );
+                .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
+        }
 
-            self.context.use_program(Some(&self.picking_program));
+        // read back pixel (probably a bad time for that)
+        // NOTE: Maybe do 2x2 area and like avg over that
+        let mut data = [0u8; 4];
+        self.context
+            .read_pixels_with_u8_array_and_dst_offset(
+                300,
+                200,
+                1,
+                1,
+                WebGl2RenderingContext::RGBA,
+                WebGl2RenderingContext::UNSIGNED_BYTE,
+                &mut data,
+                0,
+            )
+            .expect("failed to read back data");
 
-            let loc = self
-                .context
-                .get_uniform_location(&self.picking_program, "view_projection");
-            self.context
-                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
+        // -> by now data should be the 4 pixel value
+        // Do some simple calculation to figure out the coordinate
+        if data[3] /*eg. alpha*/ != 0 {
+            let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_f32();
+            let loc = loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32);
 
-            for mesh in task.meshes.iter() {
-                self.context.bind_vertex_array(Some(&mesh.vao));
+            // And also figure out the face
+            Face::FACES
+                .iter()
+                .map(|f| (f, f.normal()))
+                // First of we only consider front-facing faces wrt. to camera direction, eg. with an angle between 90° and 180°
+                // since |normal| = |view_dir| = 1 => cos(angle) = normal.dot(view_dir)
+                // and for 90° <= angle <= 180° => -1 <= cos(angle) = normal.dot(view_dir) <= 0
+                .filter(|(_f, normal)| normal.dot(camera.dir) <= 0.0f32)
+                .filter_map(|(f, normal)| {
+                    // Next we need to find the hit point of the face plane (d (point on plane), n (normal)) and the ray (o (camera pos), rd (camera dir))
+                    // The plane is given by x.dot(n) = d.dot(n) and the ray by x = o + t * rd
+                    // plugging that into the plane equation yields a result for t = ((d - o) ∙ n) / (rd ∙ n) (where ∙ denotes the dot product)
+                    let d = loc + normal * 0.5f32;
+                    let divisor = camera.dir.dot(normal);
+                    // divisor == 0 indicates parallel dir -> eg. no collision or embedded (edge case does need to handle)
+                    if divisor == 0.0f32 {
+                        return None;
+                    }
+                    let t = (d - camera.pos).dot(normal) / divisor;
 
-                self.context
-                    .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
-            }
+                    // We then obtain the hit point through x = o + t * rd
+                    let x = camera.pos + t * camera.dir;
+                    // log!("found hit-point {} for loc {} and face {:?}", x, loc, f);
 
-            // read back pixel (probably a bad time for that)
-            // NOTE: Maybe do 2x2 area and like avg over that
-            let mut data = [0u8; 4];
-            self.context
-                .read_pixels_with_u8_array_and_dst_offset(
-                    300,
-                    200,
-                    1,
-                    1,
-                    WebGl2RenderingContext::RGBA,
-                    WebGl2RenderingContext::UNSIGNED_BYTE,
-                    &mut data,
-                    0,
-                )
-                .expect("failed to read back data");
+                    // We can then obtain the u/v coordinates of the point in the plane trough the parametric form of the plane equation
+                    // x = d + u ∙ e0 + v ∙ e1 (where e0 and e1 are the edge vectors of the quad)
+                    let e0 = f.orthogonal();
+                    let e1 = e0.cross(normal).normalize();
+                    // Since e0 ∙ e1 = 0 (eg. orthogonal) and e0 ∙ e0 = e1 ∙ e1 = 1
+                    // we can compute u = (x - d) * e0 and v = (x - d) * e1
+                    let u = (x - d).dot(e0);
+                    let v = (x - d).dot(e1);
+                    // log!("[{:?}] u: {}, v: {}", f, u, v);
+                    // Then the hit-point lies inside of the quad if u, v ∈ [-0.5;0.5]
+                    (-0.5 <= u && u <= 0.5 && -0.5 <= v && v <= 0.5).then(|| (f, x))
+                })
+                .min_by(|(_, a), (_, b)| {
+                    a.distance_squared(camera.pos)
+                        .partial_cmp(&b.distance_squared(camera.pos))
+                        .unwrap_or(Ordering::Equal)
+                })
+                .map(|(f, _)| (loc, f.clone()))
+        } else {
+            None
+        }
+    }
 
-            // -> by now data should be the 4 pixel value
-            // Do some simple calculation to figure out the coordinate
-            if data[3] /*eg. alpha*/ != 0 {
-                let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_f32();
-                let loc = loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32);
-
-                // And also figure out the face
-                Face::FACES
-                    .iter()
-                    .map(|f| (f, f.normal()))
-                    // First of we only consider front-facing faces wrt. to camera direction, eg. with an angle between 90° and 180°
-                    // since |normal| = |view_dir| = 1 => cos(angle) = normal.dot(view_dir)
-                    // and for 90° <= angle <= 180° => -1 <= cos(angle) = normal.dot(view_dir) <= 0
-                    .filter(|(_f, normal)| normal.dot(camera.dir) <= 0.0f32)
-                    .filter_map(|(f, normal)| {
-                        // Next we need to find the hit point of the face plane (d (point on plane), n (normal)) and the ray (o (camera pos), rd (camera dir))
-                        // The plane is given by x.dot(n) = d.dot(n) and the ray by x = o + t * rd
-                        // plugging that into the plane equation yields a result for t = ((d - o) ∙ n) / (rd ∙ n) (where ∙ denotes the dot product)
-                        let d = loc + normal * 0.5f32;
-                        let divisor = camera.dir.dot(normal);
-                        // divisor == 0 indicates parallel dir -> eg. no collision or embedded (edge case does need to handle)
-                        if divisor == 0.0f32 {
-                            return None;
-                        }
-                        let t = (d - camera.pos).dot(normal) / divisor;
-
-                        // We then obtain the hit point through x = o + t * rd
-                        let x = camera.pos + t * camera.dir;
-                        // log!("found hit-point {} for loc {} and face {:?}", x, loc, f);
-
-                        // We can then obtain the u/v coordinates of the point in the plane trough the parametric form of the plane equation
-                        // x = d + u ∙ e0 + v ∙ e1 (where e0 and e1 are the edge vectors of the quad)
-                        let e0 = f.orthogonal();
-                        let e1 = e0.cross(normal).normalize();
-                        // Since e0 ∙ e1 = 0 (eg. orthogonal) and e0 ∙ e0 = e1 ∙ e1 = 1
-                        // we can compute u = (x - d) * e0 and v = (x - d) * e1
-                        let u = (x - d).dot(e0);
-                        let v = (x - d).dot(e1);
-                        // log!("[{:?}] u: {}, v: {}", f, u, v);
-                        // Then the hit-point lies inside of the quad if u, v ∈ [-0.5;0.5]
-                        (-0.5 <= u && u <= 0.5 && -0.5 <= v && v <= 0.5).then(|| (f, x))
-                    })
-                    .min_by(|(_, a), (_, b)| {
-                        a.distance_squared(camera.pos)
-                            .partial_cmp(&b.distance_squared(camera.pos))
-                            .unwrap_or(Ordering::Equal)
-                    })
-                    .map(|(f, _)| (loc, f.clone()))
-            } else {
-                None
-            }
-        };
-
+    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera, atlas: &Atlas) {
         // Second Pass (Main Pass)
+        self.context
+            .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
+
+        self.context.clear(
+            WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+        );
+
+        self.context.use_program(Some(&self.program));
+
+        let loc = self
+            .context
+            .get_uniform_location(&self.program, "view_projection");
+        self.context.uniform_matrix4fv_with_f32_array(
+            loc.as_ref(),
+            false,
+            camera.projection_view.as_ref(),
+        );
+
         {
-            self.context
-                .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
-
-            self.context.clear(
-                WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
-            );
-
-            self.context.use_program(Some(&self.program));
-
             let loc = self
                 .context
-                .get_uniform_location(&self.program, "view_projection");
+                .get_uniform_location(&self.program, "light_pos");
+            // TODO: Make that dynamic
+            const SUN: glam::Vec3 = glam::const_vec3!([10.0, 10.0, 10.0]);
             self.context
-                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, &view_projection);
+                .uniform3fv_with_f32_array(loc.as_ref(), SUN.as_ref())
+        }
 
-            let loc = self.context.get_uniform_location(&self.program, "model");
-            self.context.uniform_matrix4fv_with_f32_array(
-                loc.as_ref(),
-                false,
-                &glam::Mat4::IDENTITY.to_cols_array(),
-            );
+        {
+            let loc = self.context.get_uniform_location(&self.program, "view_pos");
+            self.context
+                .uniform3fv_with_f32_array(loc.as_ref(), camera.pos.as_ref())
+        }
+
+        let loc = self.context.get_uniform_location(&self.program, "model");
+
+        self.context
+            .active_texture(WebGl2RenderingContext::TEXTURE0);
+
+        self.context
+            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
+
+        for (mesh, transform) in task.meshes.iter() {
+            self.context.bind_vertex_array(Some(&mesh.vao));
+
+            let model = match transform {
+                Some(transform) => transform.as_ref(),
+                None => glam::Mat4::IDENTITY.as_ref(),
+            };
+            self.context
+                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, model);
 
             self.context
-                .active_texture(WebGl2RenderingContext::TEXTURE0);
-
-            self.context
-                .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
-
-            for mesh in task.meshes.iter() {
-                self.context.bind_vertex_array(Some(&mesh.vao));
-
-                self.context
-                    .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
-            }
-
-            if let Some((focused, face)) = focused {
-                let normal = face.normal();
-                let selection_model_matrix = glam::Mat4::from_translation(focused + 0.5 * normal);
-                let selection_model_matrix = selection_model_matrix
-                    * glam::Mat4::from_axis_angle(UP.cross(normal), UP.angle_between(normal));
-                self.context.uniform_matrix4fv_with_f32_array(
-                    loc.as_ref(),
-                    false,
-                    &selection_model_matrix.to_cols_array(),
-                );
-
-                self.context
-                    .bind_texture(WebGl2RenderingContext::TEXTURE_2D, None);
-
-                self.context.bind_vertex_array(Some(&selection_ring.vao));
-                self.context.draw_arrays(
-                    WebGl2RenderingContext::TRIANGLES,
-                    0,
-                    selection_ring.vertices_count,
-                );
-            }
+                .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
         }
     }
 }

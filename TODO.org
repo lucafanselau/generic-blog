@@ -1,0 +1,14 @@
+* Generic Blog
+
+** PROJ 404 Page [0/6]
+- [ ] Uniform abstraction
+- [ ] World (eg. multiple chunks)
+- [ ] Placement and destroy blocks
+- [ ] A bit fancier lighting
+- [ ] World generation
+- [ ] Renderer stages (Picking & Textured & Overlay)
+
+** PROJ MDX Components/Framework
+- [ ] Highlight.js component
+- [ ] Latex or comp. math framework
+- [ ] Page layout

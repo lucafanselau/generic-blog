@@ -11,6 +11,8 @@ pub struct Camera {
     yaw: f32,
     pitch: f32,
     receiver: Receiver<(i32, i32)>,
+
+    pub(crate) projection_view: glam::Mat4,
 }
 
 impl Camera {
@@ -35,30 +37,35 @@ impl Camera {
             sender.send((dx, dy)).unwrap();
         });
 
-        Camera {
+        let mut c = Camera {
             pos: glam::vec3(0.0, 0.0, 1.0),
             dir: glam::vec3(0.0, 0.0, -1.0),
             yaw: 0.0,
             pitch: 0.0,
             receiver,
-        }
+            projection_view: glam::Mat4::IDENTITY,
+        };
+
+        c.calc_matrix();
+        c
     }
 
-    pub fn to_matrix(&self) -> glam::Mat4 {
-        // TODO: Caching system
+    fn calc_matrix(&mut self) {
         let projection = glam::Mat4::perspective_rh_gl(45.0f32.to_radians(), 6.0 / 4.0, 0.1, 100.0);
         let view = glam::Mat4::look_at_rh(self.pos, self.pos + self.dir, UP);
-        projection * view
+        self.projection_view = projection * view
     }
 
     pub fn update(&mut self, dt: f32, input: &InputState) {
+        let mut new_pos = false;
         for k in Key::KEYS.iter() {
             if input.is_pressed(k) {
+                new_pos = true;
                 self.pos += dt * Self::SPEED * self.move_dir(k);
             }
         }
 
-        let mut recompute = false;
+        let mut recompute_dir = false;
         if let Some((dx, dy)) = self
             .receiver
             .try_iter()
@@ -69,14 +76,18 @@ impl Camera {
             self.pitch += Self::MOUSE_SENSITIVITY * dy as f32;
             self.pitch = self.pitch.clamp(-89.9, 89.9);
 
-            recompute = true;
+            recompute_dir = true;
         }
 
-        if recompute {
+        if recompute_dir {
             let pitch = self.pitch.to_radians();
             let yaw = self.yaw.to_radians();
             let xz_l = pitch.cos();
             self.dir = glam::vec3(xz_l * yaw.cos(), pitch.sin(), xz_l * yaw.sin());
+        }
+
+        if recompute_dir || new_pos {
+            self.calc_matrix()
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::atlas::Atlas;
 use crate::input::InputState;
 
 use crate::render::camera::Camera;
+use crate::render::camera::UP;
 use crate::render::mesh::build_selection_ring;
 
 use crate::render::mesh::Mesh;
@@ -79,7 +80,17 @@ impl Game {
     pub fn render(&self) {
         let mut task = self.renderer.task();
         task.push(&self.mesh);
-        self.renderer
-            .render(task, &self.camera, &self.atlas, &self.selection_ring);
+
+        // Pick with the chunks
+        if let Some((focused, face)) = self.renderer.pick(&task, &self.camera) {
+            // -> if we currently pick a block, add a selection ring
+            let normal = face.normal();
+            let transform = glam::Mat4::from_translation(focused + 0.5 * normal);
+            let transform =
+                transform * glam::Mat4::from_axis_angle(UP.cross(normal), UP.angle_between(normal));
+            task.push_with_transform(&self.selection_ring, transform)
+        }
+
+        self.renderer.render(&task, &self.camera, &self.atlas);
     }
 }
