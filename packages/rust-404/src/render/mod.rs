@@ -1,9 +1,7 @@
-use std::{rc::Rc, sync::Arc};
-
 use __core::cmp::Ordering;
-use anyhow::{anyhow, bail, Context as AnyhowContext};
+use anyhow::{anyhow, bail};
 use bytemuck::*;
-use enum_iterator::IntoEnumIterator;
+
 use glow::{Context, Framebuffer, HasContext, PixelPackData, Program, Shader, Texture};
 use wasm_bindgen::{prelude::Closure, JsCast};
 use web_sys::HtmlImageElement;
@@ -35,16 +33,26 @@ pub struct Vertex {
 
 const FLOAT_SIZE: i32 = std::mem::size_of::<f32>() as i32;
 
+pub enum Material {
+    Atlas,
+    Solid(glam::Vec4),
+}
+
 pub struct RenderTask<'a> {
-    meshes: Vec<(&'a Mesh, Option<glam::Mat4>)>,
+    meshes: Vec<(&'a Mesh, Option<glam::Mat4>, Material)>,
 }
 
 impl<'a> RenderTask<'a> {
     pub fn push(&mut self, mesh: &'a Mesh) {
-        self.meshes.push((mesh, None));
+        self.meshes.push((mesh, None, Material::Atlas));
     }
-    pub fn push_with_transform(&mut self, mesh: &'a Mesh, transform: glam::Mat4) {
-        self.meshes.push((mesh, Some(transform)))
+    pub fn push_with_transform_and_material(
+        &mut self,
+        mesh: &'a Mesh,
+        transform: glam::Mat4,
+        material: Material,
+    ) {
+        self.meshes.push((mesh, Some(transform), material))
     }
 }
 
@@ -134,7 +142,7 @@ impl Renderer {
 
         // And upload image data to it
         unsafe {
-            Self::load_image(&context, BlockTexture::SRC, |gl, img, img_src| {
+            Self::load_image(&context, BlockTexture::SRC, |_gl, img, _img_src| {
                 context.bind_texture(glow::TEXTURE_2D, Some(atlas));
                 context.tex_image_2d_with_html_image(
                     glow::TEXTURE_2D,
@@ -192,10 +200,10 @@ impl Renderer {
             self.context
                 .buffer_data_u8_slice(glow::ARRAY_BUFFER, data, glow::STATIC_DRAW);
 
-            const attrib_data: [i32; 4] = [3, 3, 2, 3];
-            let total_size = attrib_data.iter().sum::<i32>() * FLOAT_SIZE;
+            const ATTRIB_DATA: [i32; 4] = [3, 3, 2, 3];
+            let total_size = ATTRIB_DATA.iter().sum::<i32>() * FLOAT_SIZE;
             let mut offset = 0;
-            for (index, size) in attrib_data.iter().copied().enumerate() {
+            for (index, size) in ATTRIB_DATA.iter().copied().enumerate() {
                 self.context.vertex_attrib_pointer_f32(
                     index as u32,
                     size,
@@ -208,7 +216,7 @@ impl Renderer {
                 offset += size;
             }
 
-            attrib_data
+            ATTRIB_DATA
                 .iter()
                 .enumerate()
                 .for_each(|(i, _)| self.context.enable_vertex_attrib_array(i as u32));
@@ -368,7 +376,7 @@ impl Renderer {
                 camera.projection_view.as_ref(),
             );
 
-            for (mesh, _transform) in task.meshes.iter() {
+            for (mesh, _transform, _) in task.meshes.iter() {
                 // TODO: Model matrix
                 self.context.bind_vertex_array(Some(mesh.vao));
 
@@ -394,7 +402,7 @@ impl Renderer {
         // -> by now data should be the 4 pixel value
         // Do some simple calculation to figure out the coordinate
         if data[3] /*eg. alpha*/ != 0 {
-            let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_f32();
+            let loc = glam::UVec3::new(data[0] as _, data[1] as _, data[2] as _).as_vec3();
             let loc = loc * ((CHUNK_SIZE as f32 - 1.0) / 255.0f32);
 
             // And also figure out the face
@@ -444,7 +452,7 @@ impl Renderer {
         }
     }
 
-    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera) {
+    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera, light_dir: &glam::Vec3) {
         unsafe {
             // Second Pass (Main Pass)
             self.context.bind_framebuffer(glow::FRAMEBUFFER, None);
@@ -464,10 +472,11 @@ impl Renderer {
             );
 
             {
-                let loc = self.context.get_uniform_location(self.program, "light_pos");
+                let loc = self.context.get_uniform_location(self.program, "light_dir");
                 // TODO: Make that dynamic
-                const SUN: glam::Vec3 = glam::const_vec3!([10.0, 10.0, 10.0]);
-                self.context.uniform_3_f32_slice(loc.as_ref(), SUN.as_ref())
+                // const SUN: glam::Vec3 = glam::const_vec3!([10.0, 10.0, 10.0]);
+                self.context
+                    .uniform_3_f32_slice(loc.as_ref(), light_dir.as_ref())
             }
 
             {
@@ -484,7 +493,11 @@ impl Renderer {
             self.context
                 .bind_texture(glow::TEXTURE_2D, Some(self.atlas));
 
-            for (mesh, transform) in task.meshes.iter() {
+            let solid_color_loc = self
+                .context
+                .get_uniform_location(self.program, "solid_color");
+
+            for (mesh, transform, material) in task.meshes.iter() {
                 self.context.bind_vertex_array(Some(mesh.vao));
 
                 let model = match transform {
@@ -493,6 +506,13 @@ impl Renderer {
                 };
                 self.context
                     .uniform_matrix_4_f32_slice(loc.as_ref(), false, model);
+
+                let color = match material {
+                    Material::Atlas => &glam::Vec4::ZERO,
+                    Material::Solid(color) => color,
+                };
+                self.context
+                    .uniform_4_f32_slice(solid_color_loc.as_ref(), color.as_ref());
 
                 self.context
                     .draw_arrays(glow::TRIANGLES, 0, mesh.vertices_count)

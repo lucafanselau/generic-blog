@@ -32,19 +32,41 @@ impl Key {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Button {
+    Primary,
+    Secondary,
+    Middle,
+}
+
+impl Button {
+    pub fn from_code(code: i16) -> Option<Self> {
+        // FROM: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
+        match code {
+            0 => Some(Self::Primary),
+            1 => Some(Self::Middle),
+            2 => Some(Self::Secondary),
+            _ => None,
+        }
+    }
+}
+
 pub struct InputState {
     keys: Arc<RwLock<HashMap<Key, bool>>>,
     mouse_cbs: Arc<RwLock<Vec<Box<dyn Fn(i32, i32)>>>>,
+    mouse_down_cbs: Arc<RwLock<Vec<Box<dyn Fn(Button)>>>>,
     event_target: EventTarget,
     keydown_callback: Closure<dyn FnMut(KeyboardEvent)>,
     keyup_callback: Closure<dyn FnMut(KeyboardEvent)>,
     mouse_callback: Closure<dyn FnMut(MouseEvent)>,
+    mouse_down_callback: Closure<dyn FnMut(MouseEvent)>,
 }
 
 impl InputState {
     pub fn register(document: Document) -> Self {
         let key_state = Arc::new(RwLock::new(HashMap::new()));
         let mouse_cbs: Arc<RwLock<Vec<Box<dyn Fn(i32, i32)>>>> = Default::default();
+        let mouse_down_cbs: Arc<RwLock<Vec<Box<dyn Fn(Button)>>>> = Default::default();
 
         let event_target: EventTarget = document.into();
         let keydown_callback = {
@@ -100,13 +122,33 @@ impl InputState {
             .add_event_listener_with_callback("mousemove", mouse_callback.as_ref().unchecked_ref())
             .expect("failed to add mousemove event");
 
+        let mouse_down_callback = {
+            let cbs = mouse_down_cbs.clone();
+            Closure::wrap(Box::new(move |evt: MouseEvent| {
+                if let Some(button) = Button::from_code(evt.button()) {
+                    for cb in cbs.read().unwrap().iter() {
+                        cb(button.clone());
+                    }
+                }
+            }) as Box<dyn FnMut(MouseEvent)>)
+        };
+
+        event_target
+            .add_event_listener_with_callback(
+                "mousedown",
+                mouse_down_callback.as_ref().unchecked_ref(),
+            )
+            .expect("failed to add mousedown event");
+
         Self {
             keys: key_state,
             mouse_cbs,
+            mouse_down_cbs,
             event_target,
             keydown_callback,
             keyup_callback,
             mouse_callback,
+            mouse_down_callback,
         }
     }
 
@@ -117,6 +159,11 @@ impl InputState {
 
     pub fn add_mouse_cb<F: Fn(i32, i32) + 'static>(&self, cb: F) {
         let mut cbs = self.mouse_cbs.write().unwrap();
+        cbs.push(Box::new(cb));
+    }
+
+    pub fn add_mouse_down_cb<F: Fn(Button) + 'static>(&self, cb: F) {
+        let mut cbs = self.mouse_down_cbs.write().unwrap();
         cbs.push(Box::new(cb));
     }
 }
@@ -143,5 +190,12 @@ impl Drop for InputState {
                 self.mouse_callback.as_ref().unchecked_ref(),
             )
             .expect("failed to remove mousemove handler");
+
+        self.event_target
+            .remove_event_listener_with_callback(
+                "mousedown",
+                self.mouse_down_callback.as_ref().unchecked_ref(),
+            )
+            .expect("failed to remove mouse_down handler");
     }
 }

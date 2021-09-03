@@ -1,12 +1,19 @@
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+
 use super::utils;
+use crate::input::Button;
 use crate::input::InputState;
 
 use crate::render::camera::Camera;
 use crate::render::camera::UP;
 use crate::render::mesh::build_selection_ring;
+use crate::render::mesh::Face;
+use crate::render::Material;
 
 use crate::render::mesh::Mesh;
 use crate::render::Renderer;
+use crate::world::block::BlockType;
 use crate::world::chunk::Chunk;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -19,6 +26,10 @@ pub struct Game {
     input: InputState,
     renderer: Renderer,
 
+    light_dir: glam::Vec3,
+    chunk: Chunk,
+    last_picked: Option<(glam::Vec3, Face)>,
+    mouse_rx: Receiver<Button>,
     mesh: Mesh,
     selection_ring: Mesh,
 }
@@ -65,34 +76,83 @@ impl Game {
 
         // let atlas = Atlas::new(&renderer).await.expect("failed to create atlas");
 
+        let (tx, rx) = mpsc::channel::<Button>();
+        input.add_mouse_down_cb(move |btn| {
+            tx.send(btn).expect("failed to send mouse event");
+        });
+
         Self {
             input,
             camera,
             renderer,
+            mouse_rx: rx,
+
+            light_dir: glam::Vec3::ZERO,
+            chunk,
+            last_picked: None,
             mesh,
             selection_ring,
         }
     }
 
-    pub fn update(&mut self, dt: f32) {
+    pub fn update(&mut self, dt: f32, total: f32) {
         // log!("Got dt: {}", dt);
         self.camera.update(dt, &self.input);
+
+        // Update sun position
+        let axis = UP;
+        self.light_dir = (glam::Mat3::from_axis_angle(axis, total / 500.0) * glam::Vec3::X
+            + glam::vec3(0.0, 1.0, 0.0))
+        .normalize();
+
+        // And maybe place a block
+        if let Ok(btn) = self.mouse_rx.try_recv() {
+            if let Some((pos, face)) = self.last_picked.as_ref() {
+                let recompute = match btn {
+                    Button::Primary => {
+                        // Set the currently selected block to be air
+                        self.chunk
+                            .set(pos.as_ivec3(), BlockType::Air)
+                            .expect("failed to set air");
+                        true
+                    }
+                    Button::Secondary => {
+                        // Add a block in the direction of the face
+                        let pos = pos.as_ivec3() + face.neighbor_dir();
+                        self.chunk.set(pos, BlockType::Stone).is_ok()
+                    }
+                    _ => false,
+                };
+                if recompute {
+                    self.mesh = self
+                        .renderer
+                        .create_mesh(&self.chunk.chunk_vertices())
+                        .expect("failed to create mesh");
+                }
+            }
+        }
     }
 
-    pub fn render(&self) {
+    pub fn render(&mut self) {
         let mut task = self.renderer.task();
         task.push(&self.mesh);
 
         // Pick with the chunks
-        if let Some((focused, face)) = self.renderer.pick(&task, &self.camera) {
+        let picked = self.renderer.pick(&task, &self.camera);
+        if let Some((focused, face)) = &picked {
             // -> if we currently pick a block, add a selection ring
             let normal = face.normal();
-            let transform = glam::Mat4::from_translation(focused + 0.5 * normal);
+            let transform = glam::Mat4::from_translation(focused.clone() + 0.5 * normal);
             let transform =
                 transform * glam::Mat4::from_axis_angle(UP.cross(normal), UP.angle_between(normal));
-            task.push_with_transform(&self.selection_ring, transform)
+            task.push_with_transform_and_material(
+                &self.selection_ring,
+                transform,
+                Material::Solid(glam::vec4(0.7, 0.7, 0.7, 1.0)),
+            )
         }
+        self.last_picked = picked;
 
-        self.renderer.render(&task, &self.camera);
+        self.renderer.render(&task, &self.camera, &self.light_dir);
     }
 }

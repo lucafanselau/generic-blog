@@ -5,7 +5,7 @@ export { Page };
 
 const renderLoop = (g: Game, last: number) => {
     let now = window.performance.now();
-    g.update((now - last) / 1000.0);
+    g.update((now - last) / 1000.0, now / 1000.0);
     g.render();
     requestAnimationFrame(() => renderLoop(g, now));
 };

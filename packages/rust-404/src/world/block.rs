@@ -68,33 +68,33 @@ impl BlockType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Block {
-    pub block_type: BlockType,
-    pub opaque: bool,
-}
+// #[derive(Debug, Clone, Copy)]
+// pub struct Block {
+//     pub block_type: BlockType,
+//     pub opaque: bool,
+// }
 
-impl Block {
-    pub const DEFAULT: Self = Block {
-        block_type: BlockType::Dirt,
-        opaque: true,
-    };
+// impl Block {
+//     pub const DEFAULT: Self = Block {
+//         block_type: BlockType::Dirt,
+//         opaque: true,
+//     };
 
-    pub const DIRT: Block = Block {
-        block_type: BlockType::Dirt,
-        ..Self::DEFAULT
-    };
-    pub const AIR: Block = Block {
-        block_type: BlockType::Air,
-        opaque: false,
-        ..Self::DEFAULT
-    };
-    pub const GRASS: Block = Block {
-        block_type: BlockType::Grass,
-        ..Self::DEFAULT
-    };
-    pub const STONE: Block = Block {
-        block_type: BlockType::Stone,
-        ..Self::DEFAULT
-    };
-}
+//     pub const DIRT: Block = Block {
+//         block_type: BlockType::Dirt,
+//         ..Self::DEFAULT
+//     };
+//     pub const AIR: Block = Block {
+//         block_type: BlockType::Air,
+//         opaque: false,
+//         ..Self::DEFAULT
+//     };
+//     pub const GRASS: Block = Block {
+//         block_type: BlockType::Grass,
+//         ..Self::DEFAULT
+//     };
+//     pub const STONE: Block = Block {
+//         block_type: BlockType::Stone,
+//         ..Self::DEFAULT
+//     };
+// }

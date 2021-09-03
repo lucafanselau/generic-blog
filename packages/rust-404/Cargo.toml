@@ -36,6 +36,7 @@ wee_alloc = { version = "0.4.5", optional = true }
 glow = "0.11.0"
 enum-iterator = "0.7.0"
 num_enum = "0.5.4"
+noise = "0.7.0"
 
 [dependencies.web-sys]
 version = "0.3.4"

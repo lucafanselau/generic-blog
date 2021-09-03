@@ -1,6 +1,6 @@
 #version 300 es
 
-#define CHUNK_SIZE 4.0
+#define CHUNK_SIZE 16.0
 
 in vec3 position;
 layout(location = 3) in vec3 base_loc;

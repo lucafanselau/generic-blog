@@ -5,11 +5,11 @@ use crate::{
     },
     world::block::BlockType,
 };
-
-use super::block::Block;
+use anyhow::anyhow;
+use noise::NoiseFn;
 
 // NOTE: That has to be kept in sync with picking.vert
-pub const CHUNK_SIZE: usize = 4;
+pub const CHUNK_SIZE: usize = 16;
 
 pub struct Chunk {
     blocks: [[[BlockType; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
@@ -23,11 +23,45 @@ fn gen_3d_range(from: i32, to: i32) -> impl Iterator<Item = glam::IVec3> {
 
 impl Chunk {
     pub fn new() -> Self {
-        let mut blocks = [[[BlockType::Dirt; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
-        blocks.iter_mut().for_each(|b| *b = rand::random());
+        let mut blocks = [[[BlockType::Air; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
+
+        let perlin = noise::Perlin::new();
+        let size = CHUNK_SIZE as f64 + 2.0;
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let height = perlin.get([(x as f64 + 1.0) / size, (z as f64 + 1.0) / size])
+                    * CHUNK_SIZE as f64;
+                let height = height.floor() as i32;
+                for y in 0..CHUNK_SIZE {
+                    let block_type = match (y as i32) - height {
+                        0 => BlockType::Grass,
+                        -3..=-1 => BlockType::Dirt,
+                        -100..=-4 => BlockType::Stone,
+                        _ => BlockType::Air,
+                    };
+                    blocks[x][y][z] = block_type;
+                }
+            }
+        }
+
+        // blocks.iter_mut().for_each(|b| *b = rand::random());
 
         Chunk { blocks }
     }
+
+    pub fn set(&mut self, pos: glam::IVec3, block_type: BlockType) -> anyhow::Result<()> {
+        if pos
+            .as_ref()
+            .iter()
+            .any(|c| *c < 0 || *c >= CHUNK_SIZE as i32)
+        {
+            Err(anyhow!("pos: {:?} is out of bounds for chunk", pos))
+        } else {
+            self.blocks[pos.x as usize][pos.y as usize][pos.z as usize] = block_type;
+            Ok(())
+        }
+    }
+
     fn sample_vec(&self, vec: glam::IVec3) -> Option<BlockType> {
         if vec
             .as_ref()
