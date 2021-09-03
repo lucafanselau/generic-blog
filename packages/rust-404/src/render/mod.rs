@@ -1,18 +1,17 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use __core::cmp::Ordering;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail, Context as AnyhowContext};
 use bytemuck::*;
+use enum_iterator::IntoEnumIterator;
+use glow::{Context, Framebuffer, HasContext, PixelPackData, Program, Shader, Texture};
 use wasm_bindgen::{prelude::Closure, JsCast};
-use web_sys::{
-    HtmlImageElement, WebGl2RenderingContext, WebGlBuffer, WebGlFramebuffer, WebGlProgram,
-    WebGlShader, WebGlTexture, WebGlVertexArrayObject,
-};
+use web_sys::HtmlImageElement;
 
-use crate::{atlas::Atlas, world::chunk::CHUNK_SIZE};
+use crate::{atlas::BlockTexture, world::chunk::CHUNK_SIZE};
 
 use self::{
-    camera::{Camera, UP},
+    camera::Camera,
     mesh::{Face, Mesh},
 };
 
@@ -50,291 +49,297 @@ impl<'a> RenderTask<'a> {
 }
 
 pub struct Renderer {
-    context: WebGl2RenderingContext,
-    program: WebGlProgram,
-    picking_program: WebGlProgram,
-    picking_fb: WebGlFramebuffer,
+    context: Context,
+    program: Program,
+    picking_program: Program,
+    picking_fb: Framebuffer,
+    atlas: Texture,
 }
 
 impl Renderer {
-    pub fn new(context: WebGl2RenderingContext) -> anyhow::Result<Self> {
-        let vert_shader =
-            Self::compile_shader(&context, WebGl2RenderingContext::VERTEX_SHADER, VERTEX_CODE)?;
+    pub async fn new(context: Context) -> anyhow::Result<Self> {
+        let program = unsafe {
+            let vert_shader = Self::compile_shader(&context, glow::VERTEX_SHADER, VERTEX_CODE)?;
+            let frag_shader = Self::compile_shader(&context, glow::FRAGMENT_SHADER, FRAGMENT_CODE)?;
+            Self::link_program(&context, vert_shader, frag_shader)?
+        };
 
-        let frag_shader = Self::compile_shader(
-            &context,
-            WebGl2RenderingContext::FRAGMENT_SHADER,
-            FRAGMENT_CODE,
-        )?;
-
-        let program = Self::link_program(&context, &vert_shader, &frag_shader)?;
-
-        let picking_vert = Self::compile_shader(
-            &context,
-            WebGl2RenderingContext::VERTEX_SHADER,
-            PICKING_VERTEX_CODE,
-        )?;
-
-        let picking_frag = Self::compile_shader(
-            &context,
-            WebGl2RenderingContext::FRAGMENT_SHADER,
-            PICKING_FRAGMENT_CODE,
-        )?;
-
-        let picking_program = Self::link_program(&context, &picking_vert, &picking_frag)?;
+        let picking_program = unsafe {
+            let picking_vert =
+                Self::compile_shader(&context, glow::VERTEX_SHADER, PICKING_VERTEX_CODE)?;
+            let picking_frag =
+                Self::compile_shader(&context, glow::FRAGMENT_SHADER, PICKING_FRAGMENT_CODE)?;
+            Self::link_program(&context, picking_vert, picking_frag)?
+        };
 
         // create picking framebuffer
-        let picking_fb = {
-            let texture: WebGlTexture = context
+        let picking_fb = unsafe {
+            let texture = context
                 .create_texture()
-                .ok_or(anyhow!("failed to create picking color attachment"))?;
+                .map_err(|e| anyhow!("failed to create picking color attachment: {}", e))?;
 
-            context.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&texture));
+            context.bind_texture(glow::TEXTURE_2D, Some(texture));
 
-            context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_array_buffer_view(
-                WebGl2RenderingContext::TEXTURE_2D,
+            context.tex_image_2d(
+                glow::TEXTURE_2D,
                 0,
-                WebGl2RenderingContext::RGBA as i32,
+                glow::RGBA as i32,
                 600,
                 400,
                 0,
-                WebGl2RenderingContext::RGBA,
-                WebGl2RenderingContext::UNSIGNED_BYTE,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
                 None,
-            ).map_err(|e| anyhow!("failed to upload picking texture data: {:?}", e))?;
+            );
 
             let renderbuffer = context
                 .create_renderbuffer()
-                .ok_or(anyhow!("failed to create picking depth renderbuffer"))?;
+                .map_err(|e| anyhow!("failed to create picking depth renderbuffer: {}", e))?;
 
-            context.bind_renderbuffer(WebGl2RenderingContext::RENDERBUFFER, Some(&renderbuffer));
+            context.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer));
 
-            context.renderbuffer_storage(
-                WebGl2RenderingContext::RENDERBUFFER,
-                WebGl2RenderingContext::DEPTH_COMPONENT16,
-                600,
-                400,
-            );
+            context.renderbuffer_storage(glow::RENDERBUFFER, glow::DEPTH_COMPONENT16, 600, 400);
 
             let fb = context
                 .create_framebuffer()
-                .ok_or(anyhow!("failed to create picking framebuffer"))?;
+                .map_err(|e| anyhow!("failed to create picking framebuffer: {}", e))?;
 
-            context.bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&fb));
+            context.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
 
             context.framebuffer_texture_2d(
-                WebGl2RenderingContext::FRAMEBUFFER,
-                WebGl2RenderingContext::COLOR_ATTACHMENT0,
-                WebGl2RenderingContext::TEXTURE_2D,
-                Some(&texture),
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(texture),
                 0,
             );
 
             // make a depth buffer and the same size as the targetTexture
             context.framebuffer_renderbuffer(
-                WebGl2RenderingContext::FRAMEBUFFER,
-                WebGl2RenderingContext::DEPTH_ATTACHMENT,
-                WebGl2RenderingContext::RENDERBUFFER,
-                Some(&renderbuffer),
+                glow::FRAMEBUFFER,
+                glow::DEPTH_ATTACHMENT,
+                glow::RENDERBUFFER,
+                Some(renderbuffer),
             );
 
             fb
         };
 
-        context.enable(WebGl2RenderingContext::DEPTH_TEST);
+        // create the texture atlas
+        let atlas = unsafe {
+            context
+                .create_texture()
+                .map_err(|e| anyhow!("Failed to create a atlas_texture: {}", e))?
+        };
+
+        // And upload image data to it
+        unsafe {
+            Self::load_image(&context, BlockTexture::SRC, |gl, img, img_src| {
+                context.bind_texture(glow::TEXTURE_2D, Some(atlas));
+                context.tex_image_2d_with_html_image(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as _,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    &img,
+                );
+                context.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    glow::LINEAR_MIPMAP_LINEAR as _,
+                );
+                context.generate_mipmap(glow::TEXTURE_2D);
+                Ok(())
+            })
+            .await?;
+        }
+
+        unsafe {
+            context.enable(glow::DEPTH_TEST);
+        };
 
         Ok(Self {
             context,
             program,
             picking_program,
             picking_fb,
+            atlas,
         })
     }
 
     pub fn create_mesh(&self, vertices: &[Vertex]) -> anyhow::Result<Mesh> {
         let data: &[u8] = cast_slice(vertices);
 
-        // First create the vertex array buffer, so that the bind buffer
-        // call gets recorded into the vertex array
-        let vao: WebGlVertexArrayObject = self
-            .context
-            .create_vertex_array()
-            .ok_or(anyhow!("failed to create vertex array"))?;
+        unsafe {
+            // First create the vertex array buffer, so that the bind buffer
+            // call gets recorded into the vertex array
+            let vao = self
+                .context
+                .create_vertex_array()
+                .map_err(|e| anyhow!("failed to create vertex array: {}", e))?;
 
-        self.context.bind_vertex_array(Some(&vao));
+            self.context.bind_vertex_array(Some(vao));
 
-        let buffer: WebGlBuffer = self
-            .context
-            .create_buffer()
-            .ok_or(anyhow!("failed to create buffer"))?;
+            let buffer = self
+                .context
+                .create_buffer()
+                .map_err(|e| anyhow!("failed to create buffer: {}", e))?;
 
-        self.context
-            .bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+            self.context.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
 
-        // Then we can upload data to the buffer
-        self.context.buffer_data_with_u8_array(
-            WebGl2RenderingContext::ARRAY_BUFFER,
-            data,
-            WebGl2RenderingContext::STATIC_DRAW,
-        );
+            // Then we can upload data to the buffer
+            self.context
+                .buffer_data_u8_slice(glow::ARRAY_BUFFER, data, glow::STATIC_DRAW);
 
-        let size = 11 * FLOAT_SIZE;
+            const attrib_data: [i32; 4] = [3, 3, 2, 3];
+            let total_size = attrib_data.iter().sum::<i32>() * FLOAT_SIZE;
+            let mut offset = 0;
+            for (index, size) in attrib_data.iter().copied().enumerate() {
+                self.context.vertex_attrib_pointer_f32(
+                    index as u32,
+                    size,
+                    glow::FLOAT,
+                    false,
+                    total_size,
+                    offset * FLOAT_SIZE,
+                );
 
-        // Setup vao with vertex attribute data
-        self.context.vertex_attrib_pointer_with_i32(
-            0,
-            3,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            size,
-            0,
-        );
-        self.context.vertex_attrib_pointer_with_i32(
-            1,
-            3,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            size,
-            3 * FLOAT_SIZE,
-        );
-        self.context.vertex_attrib_pointer_with_i32(
-            2,
-            2,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            size,
-            6 * FLOAT_SIZE,
-        );
+                offset += size;
+            }
 
-        self.context.vertex_attrib_pointer_with_i32(
-            3,
-            3,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            size,
-            8 * FLOAT_SIZE,
-        );
-
-        (0..4u32).for_each(|i| self.context.enable_vertex_attrib_array(i));
-        Ok(Mesh::new(vao, buffer, vertices.len() as i32))
+            attrib_data
+                .iter()
+                .enumerate()
+                .for_each(|(i, _)| self.context.enable_vertex_attrib_array(i as u32));
+            Ok(Mesh::new(vao, buffer, vertices.len() as i32))
+        }
     }
 
     pub fn destroy_mesh(&self, mesh: Mesh) {
         let Mesh { buffer, vao, .. } = mesh;
-        self.context.delete_vertex_array(Some(&vao));
-        self.context.delete_buffer(Some(&buffer));
-    }
-
-    fn compile_shader(
-        context: &WebGl2RenderingContext,
-        shader_type: u32,
-        source: &str,
-    ) -> anyhow::Result<WebGlShader> {
-        let shader = context
-            .create_shader(shader_type)
-            .ok_or(anyhow!("Unable to create shader object"))?;
-        context.shader_source(&shader, source);
-        context.compile_shader(&shader);
-
-        if context
-            .get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
-            .as_bool()
-            .unwrap_or(false)
-        {
-            Ok(shader)
-        } else {
-            Err(context
-                .get_shader_info_log(&shader)
-                .map(|s| anyhow!("failed to compile shader: {}", s))
-                .unwrap_or(anyhow!("Unknown error creating shader")))
+        unsafe {
+            self.context.delete_vertex_array(vao);
+            self.context.delete_buffer(buffer);
         }
     }
 
-    fn onload(
-        gl: WebGl2RenderingContext,
-        img: Rc<HtmlImageElement>,
-        img_src: &'static str,
-    ) -> anyhow::Result<WebGlTexture> {
-        let texture = gl
-            .create_texture()
-            .ok_or(anyhow!("Failed to create a webgl texture"))?;
+    unsafe fn compile_shader(
+        context: &Context,
+        shader_type: u32,
+        source: &str,
+    ) -> anyhow::Result<Shader> {
+        let shader = context
+            .create_shader(shader_type)
+            .map_err(|e| anyhow!("Unable to create shader object: {}", e))?;
+        context.shader_source(shader, source);
+        context.compile_shader(shader);
 
-        gl.bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&texture));
-
-        gl.tex_image_2d_with_u32_and_u32_and_html_image_element(
-            WebGl2RenderingContext::TEXTURE_2D,
-            0,
-            WebGl2RenderingContext::RGBA as i32,
-            WebGl2RenderingContext::RGBA,
-            WebGl2RenderingContext::UNSIGNED_BYTE,
-            &img,
-        )
-        .map_err(|e| {
-            anyhow!(
-                "failed to upload image data for image: {}: {:?}",
-                img_src,
-                e
-            )
-        })?;
-
-        gl.generate_mipmap(WebGl2RenderingContext::TEXTURE_2D);
-
-        Ok(texture)
+        if context.get_shader_compile_status(shader) {
+            Ok(shader)
+        } else {
+            bail!(
+                "failed to compile shader: {}",
+                context.get_shader_info_log(shader)
+            );
+        }
     }
 
-    pub async fn load_texture(&self, img_src: &'static str) -> anyhow::Result<WebGlTexture> {
-        let (sender, receiver) =
-            futures::channel::oneshot::channel::<anyhow::Result<WebGlTexture>>();
+    // pub async fn load_texture(gl: &Context, t: Textures, texture: Texture) -> anyhow::Result<()> {
+    //     Self::load_image(gl, t.src(), move |gl, img, img_src| unsafe {
+    //         let level: u8 = t.into();
+    //         gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+    //         gl.tex_image_3d(
+    //             glow::TEXTURE_2D,
+    //             level as i32,
+    //             glow::RGBA as i32,
+    //             glow::RGBA,
+    //             glow::UNSIGNED_BYTE,
+    //             &img,
+    //         );
+    //         gl.generate_mipmap(glow::TEXTURE_2D);
+    //         Ok(())
+    //     })
+    //     .await
+    // }
 
-        let img = Rc::new(
-            HtmlImageElement::new()
-                .map_err(|e| anyhow!("failed to create image element {:?}", e))?,
-        );
+    pub async fn load_image<T: 'static>(
+        context: &Context,
+        img_src: &'static str,
+        cb: impl FnOnce(&Context, HtmlImageElement, &'static str) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        use futures::channel::oneshot::channel;
+        let (sender, receiver) = channel::<()>();
+
+        let img = HtmlImageElement::new()
+            .map_err(|e| anyhow!("failed to create image element {:?}", e))?;
 
         let closure = {
-            let img = img.clone();
-            let gl: WebGl2RenderingContext = self.context.clone();
-
             Closure::once(Box::new(move || {
                 sender
-                    .send(Self::onload(gl, img, img_src))
-                    .expect("failed to send");
+                    .send(())
+                    .expect("failed to send image completed method");
             }) as Box<dyn FnOnce()>)
         };
 
         img.set_onload(Some(closure.as_ref().unchecked_ref()));
         img.set_src(img_src);
 
-        let texture = receiver.await??;
+        // wait for completion
+        let _ = receiver.await?;
 
-        // Now it should also be safe to drop the closure, since the image has been loaded
-        Ok(texture)
+        cb(context, img, img_src)
     }
 
-    fn link_program(
-        context: &WebGl2RenderingContext,
-        vert_shader: &WebGlShader,
-        frag_shader: &WebGlShader,
-    ) -> anyhow::Result<WebGlProgram> {
+    // pub async fn load_texture(&self, img_src: &'static str) -> anyhow::Result<WebGlTexture> {
+    //     let (sender, receiver) =
+    //         futures::channel::oneshot::channel::<anyhow::Result<WebGlTexture>>();
+
+    //     let img = Rc::new(
+    //         HtmlImageElement::new()
+    //             .map_err(|e| anyhow!("failed to create image element {:?}", e))?,
+    //     );
+
+    //     let closure = {
+    //         let img = img.clone();
+    //         let gl: WebGl2RenderingContext = self.context.clone();
+
+    //         Closure::once(Box::new(move || {
+    //             sender
+    //                 .send(Self::onload(gl, img, img_src))
+    //                 .expect("failed to send");
+    //         }) as Box<dyn FnOnce()>)
+    //     };
+
+    //     img.set_onload(Some(closure.as_ref().unchecked_ref()));
+    //     img.set_src(img_src);
+
+    //     let texture = receiver.await??;
+
+    //     // Now it should also be safe to drop the closure, since the image has been loaded
+    //     Ok(texture)
+    // }
+
+    unsafe fn link_program(
+        context: &Context,
+        vert_shader: Shader,
+        frag_shader: Shader,
+    ) -> anyhow::Result<Program> {
         let program = context
             .create_program()
-            .ok_or(anyhow!("Unable to create shader object"))?;
+            .map_err(|e| anyhow!("Unable to create shader object: {}", e))?;
 
-        context.attach_shader(&program, vert_shader);
-        context.attach_shader(&program, frag_shader);
-        context.link_program(&program);
+        context.attach_shader(program, vert_shader);
+        context.attach_shader(program, frag_shader);
+        context.link_program(program);
 
-        if context
-            .get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
-            .as_bool()
-            .unwrap_or(false)
-        {
+        if context.get_program_link_status(program) {
             Ok(program)
         } else {
-            Err(context
-                .get_program_info_log(&program)
-                .map(|s| anyhow!("failed to link program: {}", s))
-                .unwrap_or(anyhow!("Unknown error creating program object")))
+            bail!(
+                "failed to link program: {}",
+                context.get_program_info_log(program)
+            );
         }
     }
 
@@ -345,46 +350,46 @@ impl Renderer {
     }
 
     pub fn pick<'a>(&self, task: &RenderTask<'a>, camera: &Camera) -> Option<(glam::Vec3, Face)> {
-        self.context
-            .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, Some(&self.picking_fb));
-        self.context.clear(
-            WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
-        );
-
-        self.context.use_program(Some(&self.picking_program));
-
-        let loc = self
-            .context
-            .get_uniform_location(&self.picking_program, "view_projection");
-        self.context.uniform_matrix4fv_with_f32_array(
-            loc.as_ref(),
-            false,
-            camera.projection_view.as_ref(),
-        );
-
-        for (mesh, _transform) in task.meshes.iter() {
-            // TODO: Model matrix
-            self.context.bind_vertex_array(Some(&mesh.vao));
-
+        // The opengl part of the picking procedure is unsafe due to glow
+        let data = unsafe {
             self.context
-                .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
-        }
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(self.picking_fb));
+            self.context
+                .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
 
-        // read back pixel (probably a bad time for that)
-        // NOTE: Maybe do 2x2 area and like avg over that
-        let mut data = [0u8; 4];
-        self.context
-            .read_pixels_with_u8_array_and_dst_offset(
+            self.context.use_program(Some(self.picking_program));
+
+            let loc = self
+                .context
+                .get_uniform_location(self.picking_program, "view_projection");
+            self.context.uniform_matrix_4_f32_slice(
+                loc.as_ref(),
+                false,
+                camera.projection_view.as_ref(),
+            );
+
+            for (mesh, _transform) in task.meshes.iter() {
+                // TODO: Model matrix
+                self.context.bind_vertex_array(Some(mesh.vao));
+
+                self.context
+                    .draw_arrays(glow::TRIANGLES, 0, mesh.vertices_count)
+            }
+
+            // read back pixel (probably a bad time for that)
+            // NOTE: Maybe do 2x2 area and like avg over that
+            let mut data = [0u8; 4];
+            self.context.read_pixels(
                 300,
                 200,
                 1,
                 1,
-                WebGl2RenderingContext::RGBA,
-                WebGl2RenderingContext::UNSIGNED_BYTE,
-                &mut data,
-                0,
-            )
-            .expect("failed to read back data");
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                PixelPackData::Slice(&mut data),
+            );
+            data
+        };
 
         // -> by now data should be the 4 pixel value
         // Do some simple calculation to figure out the coordinate
@@ -439,62 +444,59 @@ impl Renderer {
         }
     }
 
-    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera, atlas: &Atlas) {
-        // Second Pass (Main Pass)
-        self.context
-            .bind_framebuffer(WebGl2RenderingContext::FRAMEBUFFER, None);
+    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera) {
+        unsafe {
+            // Second Pass (Main Pass)
+            self.context.bind_framebuffer(glow::FRAMEBUFFER, None);
 
-        self.context.clear(
-            WebGl2RenderingContext::COLOR_BUFFER_BIT | WebGl2RenderingContext::DEPTH_BUFFER_BIT,
-        );
+            self.context
+                .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
 
-        self.context.use_program(Some(&self.program));
+            self.context.use_program(Some(self.program));
 
-        let loc = self
-            .context
-            .get_uniform_location(&self.program, "view_projection");
-        self.context.uniform_matrix4fv_with_f32_array(
-            loc.as_ref(),
-            false,
-            camera.projection_view.as_ref(),
-        );
-
-        {
             let loc = self
                 .context
-                .get_uniform_location(&self.program, "light_pos");
-            // TODO: Make that dynamic
-            const SUN: glam::Vec3 = glam::const_vec3!([10.0, 10.0, 10.0]);
+                .get_uniform_location(self.program, "view_projection");
+            self.context.uniform_matrix_4_f32_slice(
+                loc.as_ref(),
+                false,
+                camera.projection_view.as_ref(),
+            );
+
+            {
+                let loc = self.context.get_uniform_location(self.program, "light_pos");
+                // TODO: Make that dynamic
+                const SUN: glam::Vec3 = glam::const_vec3!([10.0, 10.0, 10.0]);
+                self.context.uniform_3_f32_slice(loc.as_ref(), SUN.as_ref())
+            }
+
+            {
+                let loc = self.context.get_uniform_location(self.program, "view_pos");
+                self.context
+                    .uniform_3_f32_slice(loc.as_ref(), camera.pos.as_ref())
+            }
+
+            let loc = self.context.get_uniform_location(self.program, "model");
+
+            self.context.active_texture(glow::TEXTURE0);
+
+            // TODO: Atlas
             self.context
-                .uniform3fv_with_f32_array(loc.as_ref(), SUN.as_ref())
-        }
+                .bind_texture(glow::TEXTURE_2D, Some(self.atlas));
 
-        {
-            let loc = self.context.get_uniform_location(&self.program, "view_pos");
-            self.context
-                .uniform3fv_with_f32_array(loc.as_ref(), camera.pos.as_ref())
-        }
+            for (mesh, transform) in task.meshes.iter() {
+                self.context.bind_vertex_array(Some(mesh.vao));
 
-        let loc = self.context.get_uniform_location(&self.program, "model");
+                let model = match transform {
+                    Some(transform) => transform.as_ref(),
+                    None => glam::Mat4::IDENTITY.as_ref(),
+                };
+                self.context
+                    .uniform_matrix_4_f32_slice(loc.as_ref(), false, model);
 
-        self.context
-            .active_texture(WebGl2RenderingContext::TEXTURE0);
-
-        self.context
-            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, Some(&atlas.texture));
-
-        for (mesh, transform) in task.meshes.iter() {
-            self.context.bind_vertex_array(Some(&mesh.vao));
-
-            let model = match transform {
-                Some(transform) => transform.as_ref(),
-                None => glam::Mat4::IDENTITY.as_ref(),
-            };
-            self.context
-                .uniform_matrix4fv_with_f32_array(loc.as_ref(), false, model);
-
-            self.context
-                .draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, mesh.vertices_count)
+                self.context
+                    .draw_arrays(glow::TRIANGLES, 0, mesh.vertices_count)
+            }
         }
     }
 }

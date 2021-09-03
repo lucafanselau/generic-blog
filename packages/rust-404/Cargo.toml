@@ -13,10 +13,10 @@ default = ["console_error_panic_hook"]
 [dependencies]
 wasm-bindgen = "0.2.75"
 js-sys = "0.3.52"
-glam = { version = "0.17.3", features = ["bytemuck"] }
+glam = { version = "0.18.0", features = ["bytemuck"] }
 bytemuck = { version = "1.7.2", features = ["derive"] }
 anyhow = "1.0.42"
-futures = "0.3.16"
+futures = "0.3.17"
 wasm-bindgen-futures = "0.4.25"
 rand = "0.8.4"
 getrandom = { version = "*", features = ["js"]}
@@ -33,6 +33,9 @@ console_error_panic_hook = { version = "0.1.6", optional = true }
 #
 # Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
 wee_alloc = { version = "0.4.5", optional = true }
+glow = "0.11.0"
+enum-iterator = "0.7.0"
+num_enum = "0.5.4"
 
 [dependencies.web-sys]
 version = "0.3.4"

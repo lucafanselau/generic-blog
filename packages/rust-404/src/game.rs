@@ -1,5 +1,4 @@
 use super::utils;
-use crate::atlas::Atlas;
 use crate::input::InputState;
 
 use crate::render::camera::Camera;
@@ -22,7 +21,6 @@ pub struct Game {
 
     mesh: Mesh,
     selection_ring: Mesh,
-    atlas: Atlas,
 }
 
 #[wasm_bindgen]
@@ -43,10 +41,15 @@ impl Game {
             .dyn_into::<WebGl2RenderingContext>()
             .unwrap();
 
+        // TODO: This is only a valid function for the wasm32 target (catch that, w/o rust-analyzer sucking hard)
+        let context = glow::Context::from_webgl2_context(context);
+
         let input = InputState::register(window.document().unwrap());
         let camera = Camera::new(&input);
 
-        let renderer = Renderer::new(context.clone()).expect("failed to create renderer");
+        let renderer = Renderer::new(context)
+            .await
+            .expect("failed to create renderer");
 
         // let vertices = cube(glam::Vec3::splat(1.0));
 
@@ -60,7 +63,7 @@ impl Game {
             .create_mesh(&build_selection_ring())
             .expect("failed to create selection ring mesh");
 
-        let atlas = Atlas::new(&renderer).await.expect("failed to create atlas");
+        // let atlas = Atlas::new(&renderer).await.expect("failed to create atlas");
 
         Self {
             input,
@@ -68,7 +71,6 @@ impl Game {
             renderer,
             mesh,
             selection_ring,
-            atlas,
         }
     }
 
@@ -91,6 +93,6 @@ impl Game {
             task.push_with_transform(&self.selection_ring, transform)
         }
 
-        self.renderer.render(&task, &self.camera, &self.atlas);
+        self.renderer.render(&task, &self.camera);
     }
 }

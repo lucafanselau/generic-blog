@@ -12,7 +12,7 @@ use super::block::Block;
 pub const CHUNK_SIZE: usize = 4;
 
 pub struct Chunk {
-    blocks: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+    blocks: [[[BlockType; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
 }
 
 fn gen_3d_range(from: i32, to: i32) -> impl Iterator<Item = glam::IVec3> {
@@ -23,19 +23,14 @@ fn gen_3d_range(from: i32, to: i32) -> impl Iterator<Item = glam::IVec3> {
 
 impl Chunk {
     pub fn new() -> Self {
-        let mut blocks = [[[Block::DIRT; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
-
-        for pos in gen_3d_range(0, CHUNK_SIZE as i32) {
-            if rand::random() {
-                blocks[pos.x as usize][pos.y as usize][pos.z as usize] = Block::AIR;
-            }
-        }
+        let mut blocks = [[[BlockType::Dirt; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
+        blocks.iter_mut().for_each(|b| *b = rand::random());
 
         Chunk { blocks }
     }
-    fn sample_vec(&self, vec: glam::IVec3) -> Option<Block> {
+    fn sample_vec(&self, vec: glam::IVec3) -> Option<BlockType> {
         if vec
-            .to_array()
+            .as_ref()
             .iter()
             .any(|c| *c < 0 || *c >= CHUNK_SIZE as i32)
         {
@@ -49,17 +44,15 @@ impl Chunk {
         let mut vertices = Vec::new();
         for pos in gen_3d_range(0, CHUNK_SIZE as i32) {
             if let Some(block) = self.sample_vec(pos) {
-                if !block.is_solid() {
-                    continue;
-                }
-                for face in Face::FACES.iter() {
-                    let neighbor = pos + face.neighbord_dir();
-                    match self.sample_vec(neighbor) {
-                        Some(Block {
-                            block_type: BlockType::Air,
-                        })
-                        | None => build_face(&mut vertices, face, &pos),
-                        _ => (),
+                if let Some(textures) = block.textures() {
+                    for face in Face::FACES.iter() {
+                        let neighbor = self.sample_vec(pos + face.neighbor_dir());
+                        if neighbor.is_none()
+                            || neighbor.map(|v| v.textures().is_none()).unwrap_or(false)
+                        {
+                            let texture = textures.for_face(face);
+                            build_face(&mut vertices, face, &pos, texture)
+                        }
                     }
                 }
             }

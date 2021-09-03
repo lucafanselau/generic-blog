@@ -1,16 +1,18 @@
-use web_sys::{WebGlBuffer, WebGlVertexArrayObject};
+use glow::{Buffer, VertexArray};
+
+use crate::atlas::BlockTexture;
 
 use super::camera::UP;
 use super::Vertex;
 
 pub struct Mesh {
-    pub vao: WebGlVertexArrayObject,
-    pub buffer: WebGlBuffer,
+    pub vao: VertexArray,
+    pub buffer: Buffer,
     pub vertices_count: i32,
 }
 
 impl Mesh {
-    pub fn new(vao: WebGlVertexArrayObject, buffer: WebGlBuffer, vertices_count: i32) -> Self {
+    pub fn new(vao: VertexArray, buffer: Buffer, vertices_count: i32) -> Self {
         Self {
             vao,
             buffer,
@@ -31,13 +33,14 @@ pub fn cube(scale: glam::Vec3) -> Vec<Vertex> {
         let right = (base.cross(orthogonal)).normalize() * scale;
 
         let vec = |a: f32, b: f32| -> Vertex {
-            let tex_coord = glam::vec2(a, b) * 0.5 + glam::vec2(0.5, 0.5);
+            let local_coord = glam::vec2(a, b) * 0.5 + glam::vec2(0.5, 0.5);
             // let tex_coord = Textures::DIRT.base + tex_coord * Textures::DIRT.extend;
+            const TEXTURE: BlockTexture = BlockTexture::GrassTop;
 
             Vertex {
                 pos: base + (a * right + b * orthogonal),
                 normal: norm,
-                tex_coord,
+                tex_coord: TEXTURE.tex_coord(local_coord),
                 base_loc: glam::Vec3::splat(0.0),
             }
         };
@@ -115,10 +118,10 @@ impl Face {
     ];
 
     pub fn normal(&self) -> glam::Vec3 {
-        self.neighbord_dir().as_f32()
+        self.neighbor_dir().as_vec3()
     }
 
-    pub fn neighbord_dir(&self) -> glam::IVec3 {
+    pub fn neighbor_dir(&self) -> glam::IVec3 {
         match *self {
             Face::NegativeX => -glam::IVec3::X,
             Face::PositiveX => glam::IVec3::X,
@@ -146,22 +149,23 @@ fn calc_face(
     orthogonal: glam::Vec3,
     pos: &glam::IVec3,
     vertices: &mut Vec<Vertex>,
+    t: BlockTexture,
 ) {
     let scale = 0.5f32;
-    let base = pos.as_f32() + norm * scale;
+    let base = pos.as_vec3() + norm * scale;
     let orthogonal = orthogonal * scale;
 
     let right = (norm.cross(orthogonal)).normalize() * scale;
 
     let vec = |a: f32, b: f32| -> Vertex {
-        let tex_coord = glam::vec2(a, b) * 0.5 + glam::vec2(0.5, 0.5);
+        let local_coord = glam::vec2(a, -b) * 0.5 + glam::vec2(0.5, 0.5);
         // let tex_coord = Textures::DIRT.base + tex_coord * Textures::DIRT.extend;
 
         Vertex {
             pos: base + (a * right + b * orthogonal),
             normal: norm,
-            tex_coord,
-            base_loc: pos.as_f32(),
+            tex_coord: t.tex_coord(local_coord),
+            base_loc: pos.as_vec3(),
         }
     };
 
@@ -176,6 +180,6 @@ fn calc_face(
     vertices.push(vec(1.0, 1.0));
 }
 
-pub fn build_face(vec: &mut Vec<Vertex>, face: &Face, pos: &glam::IVec3) {
-    calc_face(face.normal(), face.orthogonal(), pos, vec)
+pub fn build_face(vec: &mut Vec<Vertex>, face: &Face, pos: &glam::IVec3, t: BlockTexture) {
+    calc_face(face.normal(), face.orthogonal(), pos, vec, t)
 }
