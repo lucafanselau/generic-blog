@@ -24,17 +24,17 @@ void main() {
     // vec3 light_dir = normalize(light_pos - pass_frag_pos);
 
     // ambient
-    float ambient_strength = 0.2;
+    float ambient_strength = 0.4;
     vec3 ambient = ambient_strength * light_color;
 
     // diffuse 
-    float diffuse_strength = 0.7;
+    float diffuse_strength = 0.6;
     vec3 norm = normalize(pass_normal);
     float diff = max(dot(norm, light_dir), 0.0);
     vec3 diffuse = diffuse_strength * diff * light_color;
 
     // specular
-    float specular_strength = 0.5;
+    float specular_strength = 0.3;
     vec3 view_dir = normalize(view_pos - pass_frag_pos);
     vec3 reflect_dir = reflect(-light_dir, norm);
     float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 2.0);

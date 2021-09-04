@@ -1,13 +1,28 @@
 use rand::{distributions::Standard, prelude::Distribution};
 
 use crate::{atlas::BlockTexture, render::mesh::Face};
+use enum_iterator::IntoEnumIterator;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoEnumIterator)]
 pub enum BlockType {
     Grass,
     Stone,
     Dirt,
     Air,
+    OakLog,
+    BirchLog,
+    Plank,
+    Silver,
+    Coal,
+    Emerald,
+    Iron,
+    Gold,
+    Gravel,
+    Oven,
+    Workbench,
+    Diamond,
+    Sand,
+    Brick,
 }
 
 impl Distribution<BlockType> for Standard {
@@ -28,6 +43,11 @@ pub enum BlockTextures {
         top: BlockTexture,
         bottom: BlockTexture,
     },
+    Axis {
+        x: BlockTexture,
+        y: BlockTexture,
+        z: BlockTexture,
+    },
 }
 
 impl BlockTextures {
@@ -41,6 +61,12 @@ impl BlockTextures {
                     side.clone()
                 }
             },
+            BlockTextures::Axis { x, y, z } => match face {
+                Face::NegativeX | Face::PositiveX => x,
+                Face::NegativeY | Face::PositiveY => y,
+                Face::NegativeZ | Face::PositiveZ => z,
+            }
+            .clone(),
         }
     }
 }
@@ -64,6 +90,28 @@ impl BlockType {
             BlockType::Air => None,
             BlockType::Grass => side_top_bottom(DirtGrass, GrassTop, Dirt),
             BlockType::Stone => uniform(Stone),
+            BlockType::OakLog => side_top_bottom(TrunkSide, TrunkBottom, TrunkBottom),
+            BlockType::BirchLog => side_top_bottom(TrunkWhiteSide, TrunkWhiteTop, TrunkWhiteTop),
+            BlockType::Plank => uniform(Wood),
+            BlockType::Silver => uniform(StoneSilver),
+            BlockType::Coal => uniform(StoneCoal),
+            BlockType::Emerald => uniform(StoneIron),
+            BlockType::Iron => uniform(StoneBrowniron),
+            BlockType::Gold => uniform(StoneGold),
+            BlockType::Gravel => uniform(GravelStone),
+            BlockType::Oven => Some(BlockTextures::Axis {
+                x: Oven,
+                y: Stone,
+                z: Stone,
+            }),
+            BlockType::Workbench => Some(BlockTextures::Axis {
+                x: Table,
+                y: Wood,
+                z: Wood,
+            }),
+            BlockType::Diamond => uniform(StoneDiamond),
+            BlockType::Sand => uniform(Sand),
+            BlockType::Brick => uniform(BrickRed),
         }
     }
 }

@@ -27,6 +27,7 @@ impl Camera {
             Key::D => -1.0 * self.move_dir(&Key::A),
             Key::Space => UP,
             Key::LShift => -UP,
+            _ => glam::Vec3::ZERO,
         }
     }
 

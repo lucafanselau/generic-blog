@@ -5,6 +5,7 @@ use super::utils;
 use crate::input::Button;
 use crate::input::InputState;
 
+use crate::input::Key;
 use crate::render::camera::Camera;
 use crate::render::camera::UP;
 use crate::render::mesh::build_selection_ring;
@@ -15,6 +16,7 @@ use crate::render::mesh::Mesh;
 use crate::render::Renderer;
 use crate::world::block::BlockType;
 use crate::world::chunk::Chunk;
+use enum_iterator::IntoEnumIterator;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -27,6 +29,8 @@ pub struct Game {
     renderer: Renderer,
 
     light_dir: glam::Vec3,
+    types: Vec<BlockType>,
+    active_type: usize,
     chunk: Chunk,
     last_picked: Option<(glam::Vec3, Face)>,
     mouse_rx: Receiver<Button>,
@@ -81,6 +85,8 @@ impl Game {
             tx.send(btn).expect("failed to send mouse event");
         });
 
+        let types = BlockType::into_enum_iter().collect();
+
         Self {
             input,
             camera,
@@ -88,6 +94,8 @@ impl Game {
             mouse_rx: rx,
 
             light_dir: glam::Vec3::ZERO,
+            types,
+            active_type: 0,
             chunk,
             last_picked: None,
             mesh,
@@ -101,9 +109,17 @@ impl Game {
 
         // Update sun position
         let axis = UP;
-        self.light_dir = (glam::Mat3::from_axis_angle(axis, total / 500.0) * glam::Vec3::X
+        self.light_dir = (glam::Mat3::from_axis_angle(axis, total / 10.0) * glam::Vec3::X
             + glam::vec3(0.0, 1.0, 0.0))
         .normalize();
+
+        if self.input.is_pressed(&Key::R) {
+            self.active_type = (self.active_type + 1) % self.types.len();
+            log!(
+                "Changed active block to: {:?}",
+                self.types.get(self.active_type)
+            );
+        }
 
         // And maybe place a block
         if let Ok(btn) = self.mouse_rx.try_recv() {
@@ -119,7 +135,11 @@ impl Game {
                     Button::Secondary => {
                         // Add a block in the direction of the face
                         let pos = pos.as_ivec3() + face.neighbor_dir();
-                        self.chunk.set(pos, BlockType::Stone).is_ok()
+                        let block_type = *self
+                            .types
+                            .get(self.active_type)
+                            .unwrap_or(&BlockType::Stone);
+                        self.chunk.set(pos, block_type).is_ok()
                     }
                     _ => false,
                 };
