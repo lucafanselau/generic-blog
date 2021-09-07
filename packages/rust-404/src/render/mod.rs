@@ -11,10 +11,12 @@ use crate::{atlas::BlockTexture, world::chunk::CHUNK_SIZE};
 use self::{
     camera::Camera,
     mesh::{Face, Mesh},
+    ui::{UiFrame, UiRenderer},
 };
 
 pub mod camera;
 pub mod mesh;
+pub mod ui;
 
 const VERTEX_CODE: &'static str = include_str!("shaders/solid.vert");
 const FRAGMENT_CODE: &'static str = include_str!("shaders/solid.frag");
@@ -58,6 +60,7 @@ impl<'a> RenderTask<'a> {
 
 pub struct Renderer {
     context: Context,
+    ui_renderer: UiRenderer,
     program: Program,
     picking_program: Program,
     picking_fb: Framebuffer,
@@ -163,12 +166,17 @@ impl Renderer {
             .await?;
         }
 
+        let ui_renderer = unsafe { UiRenderer::new(&context)? };
+
         unsafe {
             context.enable(glow::DEPTH_TEST);
+            context.enable(glow::BLEND);
+            context.blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
         };
 
         Ok(Self {
             context,
+            ui_renderer,
             program,
             picking_program,
             picking_fb,
@@ -232,7 +240,7 @@ impl Renderer {
         }
     }
 
-    unsafe fn compile_shader(
+    pub unsafe fn compile_shader(
         context: &Context,
         shader_type: u32,
         source: &str,
@@ -253,23 +261,34 @@ impl Renderer {
         }
     }
 
-    // pub async fn load_texture(gl: &Context, t: Textures, texture: Texture) -> anyhow::Result<()> {
-    //     Self::load_image(gl, t.src(), move |gl, img, img_src| unsafe {
-    //         let level: u8 = t.into();
-    //         gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-    //         gl.tex_image_3d(
-    //             glow::TEXTURE_2D,
-    //             level as i32,
-    //             glow::RGBA as i32,
-    //             glow::RGBA,
-    //             glow::UNSIGNED_BYTE,
-    //             &img,
-    //         );
-    //         gl.generate_mipmap(glow::TEXTURE_2D);
-    //         Ok(())
-    //     })
-    //     .await
-    // }
+    pub async fn load_texture(&self, img_src: &'static str) -> anyhow::Result<Texture> {
+        let texture = unsafe {
+            self.context.create_texture().map_err(|e| {
+                anyhow!(
+                    "failed to create texture for image: {}, error: {}",
+                    img_src,
+                    e
+                )
+            })?
+        };
+
+        Self::load_image(&self.context, img_src, move |gl, img, img_src| unsafe {
+            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            gl.tex_image_2d_with_html_image(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                &img,
+            );
+            gl.generate_mipmap(glow::TEXTURE_2D);
+            Ok(())
+        })
+        .await;
+
+        Ok(texture)
+    }
 
     pub async fn load_image<T: 'static>(
         context: &Context,
@@ -299,36 +318,7 @@ impl Renderer {
         cb(context, img, img_src)
     }
 
-    // pub async fn load_texture(&self, img_src: &'static str) -> anyhow::Result<WebGlTexture> {
-    //     let (sender, receiver) =
-    //         futures::channel::oneshot::channel::<anyhow::Result<WebGlTexture>>();
-
-    //     let img = Rc::new(
-    //         HtmlImageElement::new()
-    //             .map_err(|e| anyhow!("failed to create image element {:?}", e))?,
-    //     );
-
-    //     let closure = {
-    //         let img = img.clone();
-    //         let gl: WebGl2RenderingContext = self.context.clone();
-
-    //         Closure::once(Box::new(move || {
-    //             sender
-    //                 .send(Self::onload(gl, img, img_src))
-    //                 .expect("failed to send");
-    //         }) as Box<dyn FnOnce()>)
-    //     };
-
-    //     img.set_onload(Some(closure.as_ref().unchecked_ref()));
-    //     img.set_src(img_src);
-
-    //     let texture = receiver.await??;
-
-    //     // Now it should also be safe to drop the closure, since the image has been loaded
-    //     Ok(texture)
-    // }
-
-    unsafe fn link_program(
+    pub unsafe fn link_program(
         context: &Context,
         vert_shader: Shader,
         frag_shader: Shader,
@@ -351,10 +341,17 @@ impl Renderer {
         }
     }
 
-    pub fn task<'a>(&self) -> RenderTask<'a> {
-        RenderTask {
-            meshes: Default::default(),
-        }
+    pub fn start_frame<'a>(&self) -> (RenderTask<'a>, UiFrame) {
+        (
+            RenderTask {
+                meshes: Default::default(),
+            },
+            UiFrame::new(),
+        )
+    }
+
+    pub fn get_atlas(&self) -> &Texture {
+        &self.atlas
     }
 
     pub fn pick<'a>(&self, task: &RenderTask<'a>, camera: &Camera) -> Option<(glam::Vec3, Face)> {
@@ -452,9 +449,15 @@ impl Renderer {
         }
     }
 
-    pub fn render<'a>(&self, task: &RenderTask<'a>, camera: &Camera, light_dir: &glam::Vec3) {
+    pub fn render<'a>(
+        &self,
+        task: RenderTask<'a>,
+        frame: UiFrame,
+        camera: &Camera,
+        light_dir: &glam::Vec3,
+    ) {
+        // Main Pass
         unsafe {
-            // Second Pass (Main Pass)
             self.context.bind_framebuffer(glow::FRAMEBUFFER, None);
 
             self.context
@@ -497,18 +500,18 @@ impl Renderer {
                 .context
                 .get_uniform_location(self.program, "solid_color");
 
-            for (mesh, transform, material) in task.meshes.iter() {
+            for (mesh, transform, material) in task.meshes.into_iter() {
                 self.context.bind_vertex_array(Some(mesh.vao));
 
                 let model = match transform {
-                    Some(transform) => transform.as_ref(),
-                    None => glam::Mat4::IDENTITY.as_ref(),
+                    Some(transform) => transform,
+                    None => glam::Mat4::IDENTITY,
                 };
                 self.context
-                    .uniform_matrix_4_f32_slice(loc.as_ref(), false, model);
+                    .uniform_matrix_4_f32_slice(loc.as_ref(), false, model.as_ref());
 
                 let color = match material {
-                    Material::Atlas => &glam::Vec4::ZERO,
+                    Material::Atlas => glam::Vec4::ZERO,
                     Material::Solid(color) => color,
                 };
                 self.context
@@ -517,6 +520,11 @@ impl Renderer {
                 self.context
                     .draw_arrays(glow::TRIANGLES, 0, mesh.vertices_count)
             }
+        }
+
+        // Ui Pass
+        unsafe {
+            self.ui_renderer.render(&self.context, frame);
         }
     }
 }

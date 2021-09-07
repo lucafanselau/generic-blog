@@ -13,10 +13,14 @@ use crate::render::mesh::Face;
 use crate::render::Material;
 
 use crate::render::mesh::Mesh;
+use crate::render::ui;
+use crate::render::ui::UiMaterial;
+use crate::render::ui::UiRect;
 use crate::render::Renderer;
 use crate::world::block::BlockType;
 use crate::world::chunk::Chunk;
 use enum_iterator::IntoEnumIterator;
+use glow::Texture;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -36,6 +40,7 @@ pub struct Game {
     mouse_rx: Receiver<Button>,
     mesh: Mesh,
     selection_ring: Mesh,
+    crosshair: Texture,
 }
 
 #[wasm_bindgen]
@@ -85,7 +90,14 @@ impl Game {
             tx.send(btn).expect("failed to send mouse event");
         });
 
-        let types = BlockType::into_enum_iter().collect();
+        let types = BlockType::into_enum_iter()
+            .filter(|t| t.textures().is_some())
+            .collect();
+
+        let crosshair = renderer
+            .load_texture("crosshair.png")
+            .await
+            .expect("failed to create crosshair texture");
 
         Self {
             input,
@@ -100,6 +112,7 @@ impl Game {
             last_picked: None,
             mesh,
             selection_ring,
+            crosshair,
         }
     }
 
@@ -154,7 +167,7 @@ impl Game {
     }
 
     pub fn render(&mut self) {
-        let mut task = self.renderer.task();
+        let (mut task, mut frame) = self.renderer.start_frame();
         task.push(&self.mesh);
 
         // Pick with the chunks
@@ -173,6 +186,20 @@ impl Game {
         }
         self.last_picked = picked;
 
-        self.renderer.render(&task, &self.camera, &self.light_dir);
+        // Draw some ui at the end
+        frame.rect(
+            UiRect::from_coords(290, 190, 20, 20),
+            UiMaterial::Sprite(self.crosshair),
+        );
+
+        ui::inventory(
+            &mut frame,
+            &self.types,
+            &self.active_type,
+            &self.renderer.get_atlas(),
+        );
+
+        self.renderer
+            .render(task, frame, &self.camera, &self.light_dir);
     }
 }

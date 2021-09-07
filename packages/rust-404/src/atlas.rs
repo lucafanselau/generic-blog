@@ -95,11 +95,18 @@ impl BlockTexture {
     const TILE_EXTEND: glam::Vec2 = glam::const_vec2!([128.0, 128.0]);
     const EXTRUSION: glam::Vec2 = glam::const_vec2!([8.0, 8.0]);
 
-    pub fn tex_coord(&self, local_coord: glam::Vec2) -> glam::Vec2 {
+    pub fn base(&self) -> glam::Vec2 {
         let pos = self.pos();
-        let base = pos.as_vec2() * (Self::TILE_EXTEND + 2.0 * Self::EXTRUSION) + Self::EXTRUSION;
+        (pos.as_vec2() * (Self::TILE_EXTEND + 2.0 * Self::EXTRUSION) + Self::EXTRUSION)
+            / Self::EXTEND
+    }
 
-        (base + local_coord * Self::TILE_EXTEND) / Self::EXTEND
+    pub fn extend(&self) -> glam::Vec2 {
+        Self::TILE_EXTEND / Self::EXTEND
+    }
+
+    pub fn tex_coord(&self, local_coord: glam::Vec2) -> glam::Vec2 {
+        self.base() + local_coord * self.extend()
     }
 
     pub const fn pos(&self) -> glam::UVec2 {
