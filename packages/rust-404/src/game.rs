@@ -149,3 +149,12 @@ impl Game {
         self.world.last_picked = picked;
     }
 }
+
+impl Drop for Game {
+    fn drop(&mut self) {
+        unsafe {
+            // This is safe, since it is called inside of the drop function
+            self.renderer.destroy_mesh_ref(&self.selection_ring);
+        }
+    }
+}

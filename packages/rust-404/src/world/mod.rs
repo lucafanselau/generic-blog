@@ -3,7 +3,7 @@ use crate::{
     render::{Face, Mesh, RenderTask, Renderer},
 };
 use enum_iterator::IntoEnumIterator;
-use std::{any::Any, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 pub mod block;
 pub mod chunk;
@@ -100,6 +100,14 @@ impl EventListener for World {
                 _ => (),
             },
             _ => (),
+        }
+    }
+}
+
+impl Drop for World {
+    fn drop(&mut self) {
+        for (_, (_, mesh)) in self.chunks.drain() {
+            self.renderer.destroy_mesh(mesh);
         }
     }
 }

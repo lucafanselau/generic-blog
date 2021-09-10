@@ -129,7 +129,7 @@ const UI_FRAGMENT_CODE: &'static str = include_str!("../shaders/ui.frag");
 
 impl UiRenderer {
     pub unsafe fn new(context: &glow::Context) -> anyhow::Result<Self> {
-        let program = unsafe {
+        let program = {
             let vert = Renderer::compile_shader(&context, glow::VERTEX_SHADER, UI_VERTEX_CODE)?;
             let frag = Renderer::compile_shader(&context, glow::FRAGMENT_SHADER, UI_FRAGMENT_CODE)?;
             Renderer::link_program(&context, vert, frag)?

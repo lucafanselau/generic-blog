@@ -241,6 +241,15 @@ impl Renderer {
         }
     }
 
+    /// Safety: A mesh that has been destroyed cannot be used, so the caller has
+    /// to make sure, that the mesh is discarded afterwards
+    pub unsafe fn destroy_mesh_ref(&self, mesh: &Mesh) {
+        let Mesh { buffer, vao, .. } = mesh;
+
+        self.context.delete_vertex_array(*vao);
+        self.context.delete_buffer(*buffer);
+    }
+
     pub unsafe fn compile_shader(
         context: &Context,
         shader_type: u32,
@@ -273,7 +282,7 @@ impl Renderer {
             })?
         };
 
-        Self::load_image(&self.context, img_src, move |gl, img, img_src| unsafe {
+        Self::load_image(&self.context, img_src, move |gl, img, _img_src| unsafe {
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
             gl.tex_image_2d_with_html_image(
                 glow::TEXTURE_2D,
@@ -286,7 +295,7 @@ impl Renderer {
             gl.generate_mipmap(glow::TEXTURE_2D);
             Ok(())
         })
-        .await;
+        .await?;
 
         Ok(texture)
     }

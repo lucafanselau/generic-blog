@@ -1,4 +1,5 @@
 //! This is a dead simple ui implementation that aims to be as simple as possible, while enabling a few nice features
+#![allow(dead_code)]
 
 pub type Color = glam::Vec4;
 
@@ -8,7 +9,7 @@ pub trait UiElement {
 
 /// An UI Node that can contain children
 pub struct Div {
-    background: Color,
+    // background: Color,
     children: Vec<Box<dyn UiElement>>,
 }
 

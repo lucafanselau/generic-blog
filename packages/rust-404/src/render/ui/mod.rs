@@ -7,7 +7,7 @@ pub use renderer::*;
 
 use crate::world::block::BlockType;
 
-use super::{mesh::Face, Renderer};
+use super::mesh::Face;
 
 pub fn inventory(
     frame: &mut UiFrame,
