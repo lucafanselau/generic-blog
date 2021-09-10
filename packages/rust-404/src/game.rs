@@ -1,21 +1,15 @@
-use std::rc::Rc;
-use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
-
 use super::utils;
 use crate::input::InputManager;
 use crate::input::InputState;
 use crate::render::camera::Camera;
 use crate::render::camera::UP;
 use crate::render::mesh::build_selection_ring;
+use crate::render::ui;
+use std::rc::Rc;
 
 use crate::render::Material;
 
-use crate::render::mesh::Mesh;
-use crate::render::ui;
-use crate::render::ui::UiMaterial;
-use crate::render::ui::UiRect;
-use crate::render::Renderer;
+use crate::render::*;
 use crate::world::World;
 
 use glow::Texture;
@@ -141,12 +135,12 @@ impl Game {
             UiMaterial::Sprite(self.crosshair),
         );
 
-        // ui::inventory(
-        //     &mut frame,
-        //     &self.types,
-        //     &self.active_type,
-        //     &self.renderer.get_atlas(),
-        // );
+        ui::inventory(
+            &mut frame,
+            &self.world.types,
+            &self.world.active_type,
+            &self.renderer.get_atlas(),
+        );
 
         self.renderer
             .render(task, frame, &self.camera, &self.light_dir);

@@ -14,8 +14,8 @@ use std::sync::mpsc::{channel, Receiver};
 
 pub struct InputManager {
     receiver: Receiver<InputEvent>,
-    keyboard: Vec<KeyboardCallback>,
-    mouse: Vec<MouseCallback>,
+    _keyboard: Vec<KeyboardCallback>,
+    _mouse: Vec<MouseCallback>,
 }
 
 impl InputManager {
@@ -71,8 +71,8 @@ impl InputManager {
 
         Ok(Self {
             receiver,
-            keyboard,
-            mouse,
+            _keyboard: keyboard,
+            _mouse: mouse,
         })
     }
 

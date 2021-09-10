@@ -1,12 +1,12 @@
 * Generic Blog
 
-** PROJ 404 Page [0/6]
-- [ ] Uniform abstraction
+** PROJ 404 Page [2/5]
 - [ ] World (eg. multiple chunks)
-- [ ] Placement and destroy blocks
+- [X] Placement and destroy blocks
+- [ ] Pause Menu / Game State (Machine?)
 - [ ] A bit fancier lighting
 - [ ] World generation
-- [ ] Renderer stages (Picking & Textured & Overlay)
+- [X] Renderer stages (Picking & Textured & Overlay)
 
 ** PROJ MDX Components/Framework
 - [ ] Highlight.js component

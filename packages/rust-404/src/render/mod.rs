@@ -13,6 +13,7 @@ use self::{
     ui::{UiFrame, UiRenderer},
 };
 pub use mesh::*;
+pub use ui::*;
 
 pub mod camera;
 pub mod mesh;

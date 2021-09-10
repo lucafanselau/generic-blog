@@ -1,9 +1,9 @@
 use crate::{
-    input::{Button, EventListener, InputEvent},
+    input::{Button, EventListener, InputEvent, Key},
     render::{Face, Mesh, RenderTask, Renderer},
 };
 use enum_iterator::IntoEnumIterator;
-use std::{collections::HashMap, rc::Rc};
+use std::{any::Any, collections::HashMap, rc::Rc};
 
 pub mod block;
 pub mod chunk;
@@ -14,8 +14,8 @@ pub use chunk::*;
 pub struct World {
     renderer: Rc<Renderer>,
     chunks: HashMap<glam::IVec2, (Chunk, Mesh)>,
-    types: Vec<BlockType>,
-    active_type: usize,
+    pub(crate) types: Vec<BlockType>,
+    pub(crate) active_type: usize,
     pub(crate) last_picked: Option<(glam::Vec3, Face)>,
 }
 
@@ -88,6 +88,17 @@ impl EventListener for World {
                     }
                 }
             }
+            InputEvent::KeyDown(key) => match key {
+                Key::E => self.active_type = (self.active_type + 1) % self.types.len(),
+                Key::Q => {
+                    if self.active_type == 0 {
+                        self.active_type = self.types.len() - 1;
+                    } else {
+                        self.active_type = (self.active_type - 1) % self.types.len()
+                    }
+                }
+                _ => (),
+            },
             _ => (),
         }
     }
