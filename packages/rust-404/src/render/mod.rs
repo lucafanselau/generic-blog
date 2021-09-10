@@ -10,9 +10,9 @@ use crate::{atlas::BlockTexture, world::chunk::CHUNK_SIZE};
 
 use self::{
     camera::Camera,
-    mesh::{Face, Mesh},
     ui::{UiFrame, UiRenderer},
 };
+pub use mesh::*;
 
 pub mod camera;
 pub mod mesh;

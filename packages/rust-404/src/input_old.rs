@@ -42,25 +42,6 @@ impl Key {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Button {
-    Primary,
-    Secondary,
-    Middle,
-}
-
-impl Button {
-    pub fn from_code(code: i16) -> Option<Self> {
-        // FROM: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
-        match code {
-            0 => Some(Self::Primary),
-            1 => Some(Self::Middle),
-            2 => Some(Self::Secondary),
-            _ => None,
-        }
-    }
-}
-
 pub struct InputState {
     keys: Arc<RwLock<HashMap<Key, bool>>>,
     mouse_cbs: Arc<RwLock<Vec<Box<dyn Fn(i32, i32)>>>>,

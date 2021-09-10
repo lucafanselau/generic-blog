@@ -90,7 +90,7 @@ impl BlockType {
             BlockType::Air => None,
             BlockType::Grass => side_top_bottom(DirtGrass, GrassTop, Dirt),
             BlockType::Stone => uniform(Stone),
-            BlockType::OakLog => side_top_bottom(TrunkSide, TrunkBottom, TrunkBottom),
+            BlockType::OakLog => side_top_bottom(TrunkSide, TrunkTop, TrunkTop),
             BlockType::BirchLog => side_top_bottom(TrunkWhiteSide, TrunkWhiteTop, TrunkWhiteTop),
             BlockType::Plank => uniform(Wood),
             BlockType::Silver => uniform(StoneSilver),
