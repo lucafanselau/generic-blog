@@ -1,0 +1,14 @@
+* Generic Blog
+
+** PROJ 404 Page [2/5]
+- [ ] World (eg. multiple chunks)
+- [X] Placement and destroy blocks
+- [ ] Pause Menu / Game State (Machine?)
+- [ ] A bit fancier lighting
+- [ ] World generation
+- [X] Renderer stages (Picking & Textured & Overlay)
+
+** PROJ MDX Components/Framework
+- [ ] Highlight.js component
+- [ ] Latex or comp. math framework
+- [ ] Page layout
