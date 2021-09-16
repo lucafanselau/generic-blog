@@ -3,7 +3,7 @@ import { Header } from '../components/header';
 
 export const PageLayout: FC = ({ children }) => {
     return (
-        <div className={'dark:bg-gray-800 bg-white w-full transition-colors'}>
+        <div className={'dark:bg-gray-800 bg-white w-full'}>
             <Header />
             <div className={'container mx-auto p-8'}>{children}</div>
         </div>

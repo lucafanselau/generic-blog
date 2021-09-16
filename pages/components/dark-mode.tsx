@@ -6,13 +6,11 @@ const pathVariants: Variants = {
     on: {
         translateX: 36,
         rotate: -90,
-        fill: 'white',
         transition: { type: 'tween' },
     },
     off: {
         translateX: 0,
         rotate: 0,
-        fill: grey,
         transition: { type: 'tween' },
     },
 };
@@ -57,6 +55,7 @@ export const DarkModeToggle: FC = () => {
             <motion.path
                 fill-rule="evenodd"
                 clip-rule="evenodd"
+                style={{ stroke: toggled ? 'white' : grey }}
                 variants={pathVariants}
                 animate={toggled ? 'on' : 'off'}
                 d="M37.1138 34.8188L34.8188 37.1138C31.8794 39.5415 28.11 41 24 41C14.6112 41 7 33.3888 7 24C7 16.7401 11.5508 10.5432 17.9553 8.10605L39.894 30.0447C39.2289 31.7924 38.2839 33.402 37.1138 34.8188Z"
