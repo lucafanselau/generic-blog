@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite-plugin-windicss';
 import typography from 'windicss/plugin/typography';
 import forms from 'windicss/plugin/forms';
+import animations from '@windicss/plugin-animations';
 
 export default defineConfig({
     darkMode: 'class',
@@ -10,5 +11,5 @@ export default defineConfig({
     attributify: {
         prefix: 'w:',
     },
-    plugins: [typography({ dark: true }), forms],
+    plugins: [typography({ dark: true }), forms, animations()],
 });

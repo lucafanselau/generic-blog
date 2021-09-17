@@ -1,18 +1,25 @@
 import reactRefresh from '@vitejs/plugin-react-refresh';
-import { UserConfig } from 'vite';
+import { defineConfig, UserConfig } from 'vite';
 
 import ssr from 'vite-plugin-ssr/plugin';
 import WindiCSS from 'vite-plugin-windicss';
-import mdx from 'vite-plugin-mdx';
+import mdx, { MdxOptions } from 'vite-plugin-mdx';
 import svgr from '@svgr/rollup';
 import ViteRsw from 'vite-plugin-rsw';
+import rehypePrism from '@mapbox/rehype-prism';
+import remarkMath from 'remark-math';
 
-const config: UserConfig = {
+const mdxOptions: MdxOptions = {
+    remarkPlugins: [],
+    rehypePlugins: [rehypePrism],
+};
+
+export default defineConfig({
     plugins: [
         reactRefresh(),
         WindiCSS(),
         ssr(),
-        mdx(),
+        mdx(mdxOptions),
         // NOTE(luca): Apparently vite's types think are not compatible to rollup plugins, even though they work
         // @ts-ignore
         svgr(),
@@ -21,6 +28,4 @@ const config: UserConfig = {
             crates: ['rust-404'],
         }),
     ],
-};
-
-export default config;
+});

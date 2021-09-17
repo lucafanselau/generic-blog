@@ -16,4 +16,19 @@ Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lo
 
 Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim placerat facer possim assum. Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam nonummy nibh euismod tincidunt ut laoreet dolore magna aliquam erat volutpat. Ut wisi enim ad minim veniam, quis nostrud exerci tation ullamcorper suscipit lobortis nisl ut aliquip ex ea commodo consequat.
 
+```rust
+pub fn render<'a>(&'a self, task: &mut RenderTask<'a>) {
+    for (_, (_, mesh)) in self.chunks.iter() {
+        task.push(mesh);
+    }
+}
+```
+
+And another math block
+Lift($L$) can be determined by Lift Coefficient ($C_L$) like the following equation.
+
+$$
+L = \frac{1}{2} \rho v^2 S C_L
+$$
+
 </Article>

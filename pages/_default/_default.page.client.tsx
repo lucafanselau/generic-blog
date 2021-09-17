@@ -3,6 +3,9 @@ import React from 'react';
 import { getPage } from 'vite-plugin-ssr/client';
 import { PageLayout } from './page-layout';
 import 'virtual:windi.css';
+import 'virtual:windi-devtools';
+import '../themes/prism-one-dark.css';
+// import 'highlight.js/styles/atom-one-dark.css';
 
 hydrate();
 
