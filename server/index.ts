@@ -1,9 +1,5 @@
 import express from 'express';
 import { createPageRender } from 'vite-plugin-ssr';
-import vite from 'vite';
-
-import path from 'path';
-const __dirname = path.resolve();
 
 const isProduction = process.env.NODE_ENV === 'production';
 const root = `${__dirname}/..`;
@@ -17,7 +13,7 @@ async function startServer() {
     if (isProduction) {
         app.use(express.static(`${root}/dist/client`, { index: false }));
     } else {
-        // const vite = require('vite');
+        const vite = require('vite');
         viteDevServer = await vite.createServer({
             root,
             server: { middlewareMode: true },

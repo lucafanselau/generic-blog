@@ -5,6 +5,7 @@ import { PageLayout } from './page-layout';
 import 'virtual:windi.css';
 import 'virtual:windi-devtools';
 import '../themes/prism-one-dark.css';
+import '../themes/katex.css';
 // import 'highlight.js/styles/atom-one-dark.css';
 
 hydrate();
